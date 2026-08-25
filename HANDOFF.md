@@ -1,162 +1,233 @@
-# Handoff — building `steam-shaman`
+# Handoff — `steam-shaman`
 
-Stage 1 (library export) is **done and verified**. Stage 2 is the recommender skill,
-designed but not built. This document is the complete brief: read it and execute.
+Both stages are built, merged and working. This document is what a new agent needs to keep
+going: how it works, what was decided and must not be re-argued, where the traps are, and
+what is left.
 
-Speak Russian in chat with the user (he dictates by voice — read intent, not letters).
-Keep files, identifiers and comments in English.
+The original stage-2 brief this project started from is in git history at commit `ecde2fa`
+if you ever want the archaeology. It is stale now — do not follow it.
 
 ---
 
-## What already exists
+## What this is, in one paragraph
 
-| Path | What it is |
+The user asks what to play. The skill asks what mood he is in, turns that into Steam tags,
+shortlists about 40 honest candidates from the Steam catalogue with a Python script, then
+judges those against his real playtime and answers with 3–5 games, each argued from hours
+he actually put in. The numbers are deterministic on purpose; the judgement is the model's.
+
+## Who you are working with
+
+Alexander, in Barcelona. Product analyst, six years in analytics. **Speak Russian in chat**
+— he dictates by voice, so read intent rather than letters and do not query small slips.
+Files, identifiers, commits, PRs and comments stay in English.
+
+What he expects, learned the hard way in this project:
+
+- **Plan → approval → run to the end.** Do not check in on every step once approved.
+- **Hit a real fork with no obvious answer: stop and ask.** Do everything unaffected first.
+  He would rather wait than get the wrong thing.
+- **Report as before / after / what changed**, and say plainly whether behaviour changed.
+- **Verify before saying done.** Run it, look at the output, quote the numbers.
+- **Say what you are unsure about yourself.** He reads diffs but does not deeply verify, so
+  naming the risky spots is your job, not his.
+- **No git operations until he says `savepoint` or `ship`.** Those are defined in
+  `~/PersonalProjects/CLAUDE.md` along with the branch numbering.
+- **A research question is not a work order.** "Найди", "посчитай", "а есть ли X" means
+  answer in chat. Do not touch files until he says to.
+
+---
+
+## Current state
+
+| | |
 |---|---|
-| [steam_fetch.py](steam_fetch.py) | Library export: Web API + store appdetails. Re-runnable, cached. |
-| [build_profile.py](build_profile.py) | Offline digest → `data/profile.json` + `data/profile.md` |
-| `data/steam_library.json` | 93 games, per-game everything. Profile, counts, wishlist (34). |
-| `data/steam_library.csv` | Flat table, 32 columns |
-| `data/cache/tags/<appid>.json` | Real Steam tags (tagid, name, vote count). **Only the 70 played games.** |
-| `data/cache/appdetails/<appid>.json` | Store payloads |
-| [README.md](README.md) | Setup and flags |
+| Repo | https://github.com/yung-sun-xxi/steam-analytics (private) |
+| Branch | `main`, CI green |
+| Tests | 85, all offline, `python3 -m unittest discover -s tests -t .` |
+| CI | `.github/workflows/ci.yml` — compileall, then the suite, on every PR |
+| His data | 93 owned games, 70 played, ~2669 h, 1 game recorded outside Steam |
 
-Account: SteamID64 `76561198059286732`, profile public.
-API key: macOS Keychain, service `steam-web-api` (`security find-generic-password -s steam-web-api -w`).
+Everything under `data/` is gitignored: the library export, the caches, the blacklist, the
+manual games and the answer journal. It is personal and it never leaves his machine.
 
-Library facts to sanity-check against: 93 owned, 70 played, 2666 h total, 23 never launched,
-12 dropped under an hour, median achievement completion 20%, 0 games at 100%.
+### Files
+
+| Path | What it does |
+|---|---|
+| `steam_fetch.py` | Library export. Web API + store appdetails. `--quick` reuses achievements for games whose playtime has not moved. |
+| `build_profile.py` | Offline digest of the export → `profile.json` / `profile.md`. |
+| `steamweb.py` | Store-front layer: tag dictionary, per-game tags, catalogue search, tag rarity, name lookup. Everything cached, 1.5 s between calls. |
+| `taste.py` | The taste vector, plus `merge_manual()` folding in games played elsewhere → `data/taste.json`. |
+| `tags.py` | Tag lookup by name, with catalogue rarity and his own weight. |
+| `candidates.py` | ~40 scored candidates for one mood → `data/candidates_<mood>.json`. |
+| `manual_games.py` | Games played outside Steam → `data/manual_games.json`. |
+| `blacklist.py` | Games and tags never to recommend → `data/blacklist.json`. |
+| `journal.py` | Append-only log of answers and free-text feedback → `data/journal.jsonl`. |
+| `.claude/skills/steam-shaman/SKILL.md` | The skill. It drives all of the above. |
+| `BACKLOG.md` | What is deliberately not built yet, in priority order. |
+
+### Data flow
+
+```
+steam_fetch.py --quick        ->  data/steam_library.json
+manual_games.py add           ->  data/manual_games.json
+        both are read by
+taste.py                      ->  data/taste.json      (vector, roles, exclusions)
+        read by
+candidates.py --tags ... --company ...  ->  data/candidates_<mood>.json
+        judged by the skill, then
+journal.py answer / feedback  ->  data/journal.jsonl
+```
 
 ---
 
-## The product, in one paragraph
+## Decisions that are settled
 
-The user asks the skill what to play. The skill asks about his **current mood**, then answers
-with 3–5 games. Mood is the task; taste is how the task gets solved. Numbers narrow the Steam
-catalogue down to ~40 honest candidates; the model judges those against the mood and explains
-each pick through his actual playtime.
+These came out of a full interview and several rounds of live testing. Do not re-litigate
+them; if one looks wrong, say why with numbers and let him decide.
 
-## Fixed design decisions
-
-Do not re-litigate these — they came out of a full interview with the user.
-
-1. **Mood drives, taste follows.** Mood decides *what* we look for; the taste vector decides
-   *which* of the fitting games he will most likely love. On conflict (he wants a genre where
-   he has zero hours) mood wins — the skill says plainly "you have no history here, so this is
-   by reputation" instead of bending toward his vector.
-2. **Game weight = `sqrt(hours) × 0.5^(years_since_last_played / 3)`.** Square root is
-   deliberate: linear weighting lets 364 h of Baldur's Gate 3 bury everything else, including
-   all the horror he played this month. Half-life is 3 years. Flagged as an MVP choice.
-3. **Weight spreads over the game's Steam tags**, proportional to each tag's vote share
-   (use the top ~15 tags per game).
-4. **Tags split by role, never removed.** Rare tags (Souls-like, Colony Sim, Open World
-   Survival Craft) drive the *search* and form the pool. Common tags (Singleplayer, Action,
-   Adventure) act as an output *filter*. The user rejected the word "penalty" — he read it as
-   deleting a tag. Frequency data: Singleplayer sits on 152 011 catalogue games, Souls-like on
-   4 304, Open World Survival Craft on 1 503. Racing is absent from his library entirely, which
-   is what keeps racing games out — not any penalty.
-5. **Candidates come from the Steam catalogue via search**, filtered to ≥500 reviews, with **no
-   date cutoff** (he plays Terraria 2011 and Civ V 2010). Owned games are excluded — except:
-6. **The "not yet tried" cohort** — zero hours *and* dropped-in-minutes are one state. These may
-   be recommended, marked "you already own this", but **at most 1 out of a 4–5 game answer, and
-   zero when the answer is 3 games**.
-7. **Wishlist boosts the score, it is not a candidate source.**
-8. **Numbers shortlist (~40), the model judges.** Selection must be a Python script, not the
-   agent curling around — otherwise every run differs and the selection logic can't be debugged.
-9. **Answer = 3–5 games with explicit roles**: direct hit / adjacent / risky bet. Labels are
-   printed, so the risky pick reads as a bet rather than an algorithm failure. Reasoning must be
-   elaborate and always concrete — name his game, his hours, when he played it.
-10. **Repeat recommendations are fine.** A mood mismatch does not blacklist a game.
-11. **Every answer is logged.** At answer time, a light reminder that feedback is valuable — no
-    interrogation. Feedback given at any moment gets recorded (free text for now).
-12. **Library data is refreshed at every run** (one quick API call, pull only what changed).
-
-## Build order
-
-Work through this in order. **Stop at step 3 and show the user** — that is where the idea is
-confirmed or broken.
-
-### 1. `taste.py`
-- Backfill `data/cache/tags/` for the 23 games with zero playtime — without tags they can't be
-  recommended as the "not yet tried" cohort. Same fetch as the played ones, ~1 s apart.
-- Build the taste vector per decision 2–3.
-- Split tags into search tags and filter tags per decision 4. Tag rarity comes from the
-  catalogue count (see Technical facts) — cache it, it's one request per tag.
-- Output a small JSON the other pieces consume. Print the top tags so the user can eyeball it.
-
-### 2. `candidates.py`
-- Input: mood tags + taste vector. Output: ~40 candidates as JSON.
-- Hit the Steam search endpoint (see below), page through results, exclude owned appids except
-  the "not yet tried" cohort, apply the ≥500 review floor, apply filter tags, boost wishlist.
-- Keep every field the model needs to argue: name, appid, tags, release date, review % and
-  count, price, store URL.
-
-### 3. Live run — the checkpoint
-Run three moods end to end: "хочу страшное", "хочу подумать", "хочу залипнуть надолго".
-Show the user the **raw candidate lists**, before any LLM judging. Report honestly if the lists
-look like garbage. Stop here.
-
-### 4. `.claude/skills/steam-shaman/SKILL.md`
-Only after step 3 passes. The skill instruction: refresh data, ask about mood, resolve mood into
-tags, call the scripts, judge, answer per decision 9, log the answer, remind about feedback.
-Add answer logging and the feedback recorder.
+1. **Mood drives, taste follows.** Mood decides what to look for; the vector decides which
+   of the fitting games he will most likely love. When he asks for a genre he has zero
+   hours in, mood wins and the answer says plainly that this is by reputation.
+2. **Weight = `sqrt(hours) * 0.5 ** (years_since_last_played / 3)`.** The root is
+   deliberate: linear weighting lets 364 h of Baldur's Gate 3 bury everything else. Flagged
+   as an MVP choice. **Corollary that matters:** never split one game's hours across
+   several records — 4×75 h scores 24.5 against 16.7 for a single 300 h record, because
+   the root is concave. Splitting defeats the only thing the root is there for.
+3. **Weight spreads over the game's Steam tags**, proportional to each tag's share of votes
+   among its top 15.
+4. **Tags split by role, never removed.** Rare tags (≤8000 catalogue games) drive the
+   search; common ones (Singleplayer, Action) only shape the ranking. He rejected the word
+   "penalty" — he read it as deleting a tag. Racing stayed out because there was no racing
+   in his data, not because anything was punished.
+5. **Everything he says is a mood keyword.** Pace, length, tone — all of it becomes tags.
+   Nothing about mood is hardcoded, so a bad tag choice is fixed by saying it differently
+   rather than by editing code. He asked for this explicitly after seeing a hardcoded
+   session-length axis proposed.
+6. **Company is the one exception**, because it is a fact rather than a preference. The
+   `Co-op` tag is voted on and lies — Dead by Daylight carries one and has no single-player
+   mode — while `category2` is declared by the developer. Hence `--company solo|coop`.
+7. **Candidates come from catalogue search**, ≥500 reviews, no date cutoff (he plays
+   Terraria 2011 and Civ V 2010). Owned games excluded, except the never-really-tried
+   cohort (under an hour), which stays, is flagged, and is capped at one per answer of 4–5
+   and none in an answer of 3.
+8. **Wishlist boosts the score; it is not a candidate source.**
+9. **Numbers shortlist, the model judges.** The selection must stay a script, or every run
+   differs and nothing can be debugged.
+10. **Answers name roles out loud** — прямое попадание / рядом / рискованная ставка — so a
+    risky pick reads as a bet rather than as the algorithm failing. Reasoning must be
+    concrete: his game, his hours, when he played it.
+11. **Repeats are fine.** A mood mismatch does not blacklist anything. The blacklist is a
+    separate, explicit statement and nothing lands there on its own judgement.
+12. **A manual record must never be richer than a Steam one.** Steam gives two numbers for
+    his 93 games — hours and last-played. A manual entry with more fields would make the
+    two incomparable. Bursty play patterns go in `--note`, which does not touch the weight.
 
 ---
 
-## Technical facts already verified
+## Technical facts already verified — do not rediscover
 
-Don't re-discover these.
+**Catalogue search.** `https://store.steampowered.com/search/results/?query&start=0&count=50&sort_by=...&tags=<ids>&infinite=1&json=1`
+Returns `{total_count, results_html}`. Needs a browser User-Agent. Useful parameters:
+`category1=998` restricts to games, `category2` is player support (2 single-player,
+1 multi-player, 9 co-op, 38 online co-op, 39 local co-op).
 
-**Catalogue search** (this is "the Steam catalogue" in practice — no full dump needed):
-```
-https://store.steampowered.com/search/results/?query&start=0&count=50&sort_by=Reviews_DESC&tags=<tagid>,<tagid>&infinite=1&json=1
-```
-Returns `{total_count, results_html}`. Send a browser User-Agent. From `results_html` extract:
-`data-ds-appid`, `data-ds-tagids` (the game's own top tags), `<span class="title">`,
-`.search_released`, and the review summary from `data-tooltip-html` on `.search_review_summary`.
-`total_count` under a single-tag filter is exactly the tag-rarity number needed in step 1.
+**`sort_by=Reviews_DESC` sorts by review *percentage*, not review count**, and floats
+obscure 100% titles to the top. Recognisable hits come from relevance (`sort_by=_ASC`).
+`candidates.py` runs both and merges — this is not redundancy, do not "simplify" it away.
 
-**Tag dictionary** (430 tags, name → tagid):
-`https://store.steampowered.com/tagdata/populartags/english`
+**Tag rarity depends on the sort mode.** Measured through review-score sort, Singleplayer
+is 48089 and Souls-like 1344; through relevance the same tags are far larger, because
+relevance keeps games with no meaningful review count (Horror: 21865 vs 9645). Everything
+here is measured the one way, so the 8000-game threshold is internally consistent — but the
+numbers will not match a differently measured source, including the ones in the original
+brief.
 
-**A game's own tags with vote counts** — regex `InitAppTagModal\(\s*\d+,\s*(\[.*?\]),` on the
-store page HTML. Send cookies `birthtime=0; lastagecheckage=1-January-1970` or age-gated pages
-return an interstitial. This is what `data/cache/tags/` holds.
+**Tag dictionary:** `https://store.steampowered.com/tagdata/populartags/english`, 430 tags.
+Only these are usable as search filters or in hand-written tag lists.
 
-**Name → appid** (for the future "games outside Steam" feature):
-`https://store.steampowered.com/api/storesearch/?term=<name>&cc=es&l=english`
+**A game's own tags:** regex `InitAppTagModal\(\s*\d+,\s*(\[.*?\]),` on the store page, with
+cookies `birthtime=0; lastagecheckage=1-January-1970`, or age-gated pages return an
+interstitial.
 
-**Rate limits.** Store endpoints throttle at roughly 200 requests / 5 min — keep ~1–1.5 s
-between calls and cache everything to disk. Web API with a key is generous (0.15 s is fine).
+**Name → appid:** `https://store.steampowered.com/api/storesearch/?term=<name>&cc=<cc>&l=english`.
+Fuzzy: "Halo" returns The Master Chief Collection first. Never take the first hit silently.
+
+**Concurrent players:** `https://api.steampowered.com/ISteamUserStats/GetNumberOfCurrentPlayers/v1/?appid=<id>`,
+no key needed. Verified working — this is backlog item 1.
+
+**Rate limits.** Store endpoints throttle at roughly 200 requests / 5 min; keep ~1.5 s
+between calls and cache to disk. The Web API with a key is generous, 0.15 s is fine.
 
 **Traps.**
-- Anonymous community pages redirect to login — `?xml=1` profile scraping does not work.
-- Four owned appids are regional/beta builds with no store page. `APPID_ALIASES` in
-  `steam_fetch.py` maps them to the canonical edition; such records carry `metadata_from_appid`.
-- `rtime_last_played` is unreliable for pre-2014 sessions (Dishonored and Deus Ex both report
-  2013). Don't treat those dates as precise recency.
-- Two of the 70 played games have no tags at all — handle empty tag lists.
+- Four owned appids are regional or beta builds with no store page. `APPID_ALIASES` in
+  `steam_fetch.py` maps them to the canonical edition.
+- `rtime_last_played` is unreliable before 2014 — Dishonored and Deus Ex both report 2013.
+- Steam user tags are noisy. Buckshot Roulette carries a `Strategy` tag and turns up under
+  "хочу подумать". That is real community data; the skill drops such picks by judgement,
+  code cannot.
+- Fortnite is not on Steam at all. Games like it take the hand-written tag path.
 
 ---
 
-## Deferred — do not build now, but don't design them out
+## Known rough edges
 
-1. Typed feedback schema. Currently free text.
-2. Auto-matching: the skill notices a recommended game showed up in the library with hours.
-3. Prompts for an empty request ("не знаю, чего хочу") — rubrics like new releases, niche
-   but well-reviewed, calm vs restless. MVP can be minimal.
-4. Blacklist of games and genres.
-5. Revisit `sqrt(hours)`.
-6. More dialogue questions beyond mood: time available, solo or with someone.
-7. **Games outside Steam** (second iteration, explicitly wanted). He will name a batch of games
-   and rough hours by voice — console, at a friend's place, on disc. The skill resolves each name
-   to an appid via storesearch, pulls its tags, and writes it into his data alongside the
-   exported games. Games absent from Steam entirely need a record with no appid. Open problem:
-   these have no last-played date, and decay depends on it — ask "when was this", even roughly.
+None of these are blocking, and none have tickets. Fix them when you are next in the file,
+or raise them with him.
 
-## Working agreement with the user
+1. **`tag_rarity.json` never expires.** Rarity is fetched once per tag and cached forever.
+   The catalogue grows, so these numbers drift. Nothing refreshes them today.
+2. **`steam_fetch.py --quick` re-fetches achievements for games that have none.** The reuse
+   check keys on `achievements_total` being truthy, so about 11 of his 93 games hit the API
+   on every refresh for nothing. Harmless, just wasteful.
+3. **`candidates.py` names its output by a slug of the mood text.** Two different tag sets
+   with the same mood wording overwrite each other.
+4. **`blacklist.py add-game --first`** exists and will silently ban whatever the store
+   returned first. `SKILL.md` says not to use it. Consider removing it outright.
+5. **`journal.jsonl` has no rotation or read-side tooling** beyond `show`. Fine for now,
+   but backlog items 4 and 5 both depend on reading it back.
+6. **`main` has no branch protection.** Merges could bypass CI. He was offered this and has
+   not asked for it.
 
-- Plan → approval → run to completion. Don't check in on every step once approved.
-- Hit a genuine fork with no obvious answer: stop and ask. Do everything unaffected first.
-- Report changes as before / after / what changed. Say plainly whether behaviour changed.
-- Verify code before saying it's done — build it, run it, look at the output.
-- No git operations until he says "savepoint" or "ship".
+---
+
+## What is left
+
+`BACKLOG.md` holds six items in priority order. The order is one opinion and it moves, so
+refer to items by name rather than by number. In short:
+
+1. **Player-count stats** — drop dead multiplayer, and use players-per-1000-reviews as the
+   staying-power signal for long-haul moods. Cheap, self-contained, prevents a whole class
+   of bad recommendations. Item 1 in the file has the measured numbers and the caveats.
+2. **Steam country and prices** — a real bug today: `steam_fetch.py` defaults to `--cc es`
+   while `candidates.py` sends no country at all, so one answer mixes two regions. Ask
+   every time unless he asks to have it remembered, and then never ask again.
+3. **Prompts for "не знаю, чего хочу"**.
+4. **Auto-matching recommendations against the library** — needs journal entries, of which
+   there are none yet.
+5. **Typed feedback** — blocked until there is enough free text to derive fields from.
+6. **Revisit `sqrt(hours)`** — nothing to test against until 4 and 5 exist.
+
+Read the item in `BACKLOG.md` before starting: several carry design decisions and measured
+numbers that took a live round to establish.
+
+---
+
+## How to pick up work
+
+```bash
+cd "/Users/a.stepanenkov/PersonalProjects/Steam analytics"
+python3 -m unittest discover -s tests -t .      # 85 tests, offline, ~0.03 s
+python3 steam_fetch.py --steamid 76561198059286732 --quick
+python3 taste.py
+python3 candidates.py --tags horror --mood "хочу страшное" --company coop --limit 20
+```
+
+His SteamID64 is `76561198059286732`, profile public. The API key is in the macOS Keychain:
+`security find-generic-password -s steam-web-api -w`.
+
+Write tests for anything with arithmetic or parsing in it, and keep them offline — CI has
+no Steam access and must never depend on it. Then verify against the live catalogue by hand
+and quote the actual output in your report, because that is the only thing that shows the
+change does what you claim.

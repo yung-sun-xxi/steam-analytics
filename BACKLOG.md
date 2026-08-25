@@ -1,9 +1,13 @@
 # Backlog — steam-shaman
 
-Stage 1 (library export) and stage 2 (the recommender skill) are built and working. This
-is what is deliberately not built yet. The deferred list in `HANDOFF.md` is folded in
-here; that document stays as the original brief. Already done and dropped from this list:
-the blacklist of games and tags (`blacklist.py`), and the alone-or-with-someone filter. Time and pace were deliberately not built as their own axis - they go through the mood tags like any other word. Games played outside Steam are in as well (`manual_games.py`).
+Stage 1 (library export) and stage 2 (the recommender skill) are built and working. This is
+what is deliberately not built yet. `HANDOFF.md` is the live project handoff: architecture,
+settled decisions, verified endpoints and known rough edges — read it first.
+
+Already done and dropped from this list: the blacklist of games and tags
+(`blacklist.py`), the alone-or-with-someone filter, and games played outside Steam
+(`manual_games.py`). Time and pace were deliberately *not* built as their own axis — they
+go through the mood tags like any other word he says.
 
 **The order is the priority, and it is only my opinion.** Ranking weighs how much an item
 would change an answer against what it costs to build; anything that cannot be built until
