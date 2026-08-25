@@ -47,8 +47,19 @@ def read(outdir):
     return out
 
 
-def now_id():
-    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+def now_id(taken=()):
+    """Second-granularity id, suffixed if that second is already in the journal.
+
+    Two entries logged inside the same second would otherwise share an id, and
+    feedback that points at "the last answer" would have no way to say which.
+    """
+    base = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    if base not in taken:
+        return base
+    n = 2
+    while f"{base}-{n}" in taken:
+        n += 1
+    return f"{base}-{n}"
 
 
 def load_picks(args):
@@ -64,10 +75,11 @@ def load_picks(args):
 
 def cmd_answer(args):
     picks = load_picks(args)
+    taken = {r.get("id") for r in read(args.outdir)}
     if isinstance(picks, dict):
         picks = picks.get("picks") or []
     rec = {
-        "id": now_id(),
+        "id": now_id(taken),
         "kind": "answer",
         "at": datetime.now(timezone.utc).isoformat(),
         "mood": args.mood,
@@ -85,7 +97,7 @@ def cmd_feedback(args):
         answers = [r for r in read(args.outdir) if r.get("kind") == "answer"]
         answer_id = answers[-1]["id"] if answers else None
     rec = {
-        "id": now_id(),
+        "id": now_id({r.get("id") for r in read(args.outdir)}),
         "kind": "feedback",
         "at": datetime.now(timezone.utc).isoformat(),
         "about_answer": answer_id,
