@@ -125,6 +125,27 @@ def game_tags(appid, outdir="data", alias=None):
     return tags
 
 
+# ---------------------------------------------------------------- name lookup
+
+STORESEARCH_URL = "https://store.steampowered.com/api/storesearch/"
+
+
+def store_search(term, cc="es", limit=8):
+    """Resolve a game name to store entries. Returns [{appid, name, ...}, ...].
+
+    Fuzzy on purpose - "Halo" comes back as The Master Chief Collection - so callers
+    must show what matched rather than take the first hit.
+    """
+    url = STORESEARCH_URL + "?" + urllib.parse.urlencode(
+        {"term": term, "cc": cc, "l": "english"})
+    data = http_json(url)
+    items = (data or {}).get("items") or []
+    return [{"appid": i.get("id"), "name": i.get("name"),
+             "type": i.get("type"),
+             "store_url": f"https://store.steampowered.com/app/{i.get('id')}/"}
+            for i in items[:limit] if i.get("id")]
+
+
 # ---------------------------------------------------------------- catalogue search
 
 ROW_RE = re.compile(r'<a[^>]*class="search_result_row.*?</a>', re.S)

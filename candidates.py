@@ -20,6 +20,7 @@ import os
 import sys
 from datetime import datetime, timezone
 
+import blacklist
 import steamweb
 
 MIN_REVIEWS = 500
@@ -119,6 +120,13 @@ def collect(mood_tags, taste_by_tag, roles, by_id, verbose=True):
     return pool, cross, trace
 
 
+def is_blacklisted(row, banned_games, banned_tags):
+    """A candidate is out if he banned the game itself or any tag on its card."""
+    if row["appid"] in banned_games:
+        return True
+    return bool(banned_tags & set(row.get("search_tagids") or []))
+
+
 def score(row, taste_by_tag, roles, wishlist, not_tried_ids, mood_tags):
     tags = row.get("search_tagids") or []
     taste_fit = sum(taste_by_tag.get(t, 0.0) for t in tags)
@@ -148,13 +156,22 @@ def score(row, taste_by_tag, roles, wishlist, not_tried_ids, mood_tags):
     }
 
 
-def build(taste, mood_tags, mood_label, limit=SHORTLIST, verbose=True):
+def build(taste, mood_tags, mood_label, limit=SHORTLIST, verbose=True,
+          outdir="data"):
     by_name, by_id = steamweb.tag_dictionary()
     taste_by_tag = {t["tagid"]: t["weight"] for t in taste["tags"]}
     roles = {t["tagid"]: t["role"] for t in taste["tags"]}
     owned = set(taste["owned_appids"])
     not_tried_ids = {g["appid"] for g in taste["not_tried"]}
     wishlist = set(taste["wishlist_appids"])
+    banned_games, banned_tags = blacklist.sets(outdir)
+
+    clash = [t for t in mood_tags if t in banned_tags]
+    if clash and verbose:
+        # Searching for something he has banned would return an empty list and look like
+        # a bug. Say what happened instead.
+        print("  ! this mood asks for a blacklisted tag: "
+              + ", ".join(by_id.get(t, str(t)) for t in clash))
 
     if verbose:
         print(f"Mood: {mood_label or '-'}  tags: "
@@ -162,8 +179,12 @@ def build(taste, mood_tags, mood_label, limit=SHORTLIST, verbose=True):
 
     pool, cross, trace = collect(mood_tags, taste_by_tag, roles, by_id, verbose)
 
-    scored, rejected = [], {"owned": 0, "few_reviews": 0, "no_reviews": 0, "no_overlap": 0}
+    scored, rejected = [], {"owned": 0, "few_reviews": 0, "no_reviews": 0,
+                            "no_overlap": 0, "blacklisted": 0}
     for appid, row in pool.items():
+        if is_blacklisted(row, banned_games, banned_tags):
+            rejected["blacklisted"] += 1
+            continue
         if appid in owned and appid not in not_tried_ids:
             rejected["owned"] += 1
             continue
@@ -195,7 +216,7 @@ def build(taste, mood_tags, mood_label, limit=SHORTLIST, verbose=True):
         if len(out) >= limit:
             break
 
-    return {
+    result = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "mood": mood_label,
         "mood_tags": [{"tagid": t, "name": by_id.get(t, str(t))} for t in mood_tags],
@@ -205,18 +226,23 @@ def build(taste, mood_tags, mood_label, limit=SHORTLIST, verbose=True):
                    "max_owned_not_tried": MAX_NOT_TRIED},
         "cross_tags": [{"tagid": t, "name": n, "mood_pool_hits": h} for t, n, h in cross],
         "queries": trace,
+        "blacklist": {"games": len(banned_games), "tags": len(banned_tags),
+                      "dropped": 0},
         "pool_size": len(pool),
         "rejected": rejected,
         "eligible": len(scored),
         "candidates": out,
     }
+    result["blacklist"]["dropped"] = rejected["blacklisted"]
+    return result
 
 
 def report(res, top=40):
     r = res["rejected"]
     print(f"\nPool {res['pool_size']} -> eligible {res['eligible']} "
           f"(dropped: owned {r['owned']}, <{MIN_REVIEWS} reviews {r['few_reviews']}, "
-          f"no reviews {r['no_reviews']}, no tag overlap {r['no_overlap']})")
+          f"no reviews {r['no_reviews']}, no tag overlap {r['no_overlap']}, "
+          f"blacklisted {r.get('blacklisted', 0)})")
     print(f"\n{'#':>3} {'score':>6} {'name':44s} {'reviews':>9} {'%':>4} {'released':12s} flags")
     for i, c in enumerate(res["candidates"][:top], 1):
         flags = []
@@ -248,7 +274,7 @@ def main():
     by_name, _ = steamweb.tag_dictionary(args.outdir)
     mood_tags = resolve_tags(args.tags.split(","), by_name)
 
-    res = build(taste, mood_tags, args.mood, args.limit)
+    res = build(taste, mood_tags, args.mood, args.limit, outdir=args.outdir)
     report(res, args.limit)
 
     slug = "".join(ch if ch.isalnum() else "-" for ch in (args.mood or args.tags).lower())
