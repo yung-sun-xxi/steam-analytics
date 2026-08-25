@@ -37,6 +37,11 @@ something new, something niche but well reviewed, something calm, something dema
 
 ## 3. Turn the mood into tags
 
+**Everything he says is a mood keyword.** Pace, length, tone, "хочу подольше", "хочу
+что-то медленное" — all of it becomes tags, exactly like "хочу страшное" does. Nothing
+about mood is hardcoded, and that is deliberate: when a tag choice misses, the fix is a
+different tag next time, not a change to the code. The one exception is company, below.
+
 Pick 1–2 Steam tags. Two tags are ANDed by the search, so a second tag narrows hard —
 use one unless the mood really is a conjunction.
 
@@ -60,6 +65,32 @@ if the mood is more specific than these:
 | сюжет | `Story Rich`, `Choices Matter`, `Narrative` |
 | подраться / сложное | `Souls-like`, `Difficult`, `Action RPG` |
 | расслабиться | `Relaxing`, `Cozy`, `Farming Sim` |
+
+### Alone or with someone — the one thing that is not a mood keyword
+
+`candidates.py` prints the mood's co-op share before it searches, and writes it into the
+JSON as `coop_share.worth_asking`:
+
+```
+co-op share of this mood: 1041/9650 = 11%  -> worth asking about company
+```
+
+- **He already said it** ("с братом", "один сегодня") → use it, do not ask again.
+- **`worth_asking` is true and he said nothing** → ask once, plainly:
+  «Под это настроение есть и одиночное, и кооперативное. Один играешь или с кем-то?»
+- **`worth_asking` is false** → do not ask. Story Rich is 4.8% co-op and Colony Sim has
+  89 co-op games in the whole catalogue; the question would change nothing and a pointless
+  question is what turns a recommendation into a form.
+
+Then rerun with the answer:
+
+```bash
+python3 candidates.py --tags horror --mood "хочу страшное" --company coop
+```
+
+`solo` is Steam's Single-player category, `coop` its Co-op category — both declared by the
+developer. This is why company is a filter and not a tag: the `Co-op` tag is voted on and
+lies. Dead by Daylight carries it and has no single-player mode at all.
 
 **Mood wins over taste.** If he asks for a genre he has zero hours in, do not bend the
 search toward his vector to make the numbers comfortable. Run the mood, and say plainly

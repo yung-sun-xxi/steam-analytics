@@ -1,10 +1,16 @@
 # Backlog — steam-shaman
 
-Stage 1 (library export) and stage 2 (the recommender skill) are built and working.
-This is what is deliberately not built yet. Done and removed from this
-list: the blacklist of games and tags (`blacklist.py`). Ordered by what would change an answer the
-most, not by effort. The deferred list in `HANDOFF.md` is folded in here; that document
-stays as the original brief.
+Stage 1 (library export) and stage 2 (the recommender skill) are built and working. This
+is what is deliberately not built yet. The deferred list in `HANDOFF.md` is folded in
+here; that document stays as the original brief. Already done and dropped from this list:
+the blacklist of games and tags (`blacklist.py`), and the alone-or-with-someone filter. Time and pace were deliberately not built as their own axis - they go through the mood tags like any other word.
+
+**The order is the priority, and it is only my opinion.** Ranking weighs how much an item
+would change an answer against what it costs to build; anything that cannot be built until
+there is journal data sits at the bottom regardless of how good it would be.
+
+**Refer to an item by its name, not its number.** The numbers move whenever something is
+added, finished or reprioritised, and a stale number points at the wrong item.
 
 ---
 
@@ -149,25 +155,18 @@ So the skill can notice on its own that a recommended game showed up in the libr
 hours on it — that is feedback without asking for feedback, and the strongest signal
 available. Needs the journal read at refresh time and a rule for what to do with a match.
 
-## 6. More of the conversation than mood
-
-Deferred on purpose to keep the first version to one question. The obvious next two:
-how much time he has tonight, and solo or with someone. The second one matters more than
-it looks — half his heavy tags are Co-op and Online Co-Op, and the answer flips which half
-of the shortlist is relevant.
-
-## 7. Typed feedback
+## 6. Typed feedback
 
 `journal.py feedback` takes free text today, which is right for now: a form would turn a
 recommendation into an interrogation. Once there are twenty or thirty entries, look at what
 he actually writes and derive the fields from that, rather than guessing them upfront.
 
-## 8. Revisit `sqrt(hours)`
+## 7. Revisit `sqrt(hours)`
 
 Flagged as an MVP choice from the start. Square root plus a 3-year half-life is what keeps
 364 h of Baldur's Gate 3 from burying everything else, but the exact curve was never
 tested against anything. Worth revisiting once there is feedback data to test against —
-which makes this depend on 5 and 7.
+which makes this depend on auto-matching and typed feedback.
 
 ---
 

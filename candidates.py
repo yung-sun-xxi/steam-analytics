@@ -5,6 +5,12 @@ Mood decides what we search for; taste decides which of the fitting games float 
 Everything here is arithmetic on purpose - the model judges the shortlist, but the
 shortlist itself has to be reproducible and debuggable.
 
+"Solo or with someone" is the one thing that is not a mood keyword. A `Co-op` tag is
+voted on by players and lies - Dead by Daylight carries one and has no single-player mode
+at all - while `category2` is declared by the developer and actually answers whether the
+game will start for two. So it is a real filter; everything else about pace, length or
+tone goes through the mood tags like any other word he says.
+
 Queries per run: the mood tags alone (by relevance and by review score), then the mood
 tags crossed with his own rare tags - but only the ones that actually live next to this
 mood in the catalogue, so "хочу подумать" does not quietly become another survival list.
@@ -32,6 +38,15 @@ WISHLIST_BOOST = 1.25
 # A game the mood tag does not even reach the card of is not rejected, only damped:
 # it can still be the risky bet, it just should not outrank an actual hit.
 OFF_MOOD_FACTOR = 0.6
+# Steam's own "player support" filter, declared by the developer rather than voted on.
+COMPANY_CATEGORY = {"solo": 2, "coop": 9}
+# Asking "alone or with someone?" is only worth it when both hold: the mood has a real
+# co-op share, and enough co-op games in absolute terms to fill a shortlist. Measured
+# across eight moods: story rich 4.8%, puzzle 6.0%, horror 10.8%, strategy 12.0%,
+# survival 22.5%, open world 24.2%. Colony Sim sits at 10.8% but only 89 games, which is
+# why the share alone is not enough.
+ASK_COMPANY_MIN_SHARE = 0.10
+ASK_COMPANY_MIN_GAMES = 150
 
 
 def load(path):
@@ -82,16 +97,35 @@ def mood_affine_tags(rows, taste_by_tag, roles, mood_tags, by_id, n=CROSS_TAGS):
     return [(tid, by_id.get(tid, str(tid)), hits) for _, tid, hits in ranked[:n]]
 
 
-def collect(mood_tags, taste_by_tag, roles, by_id, verbose=True):
+def coop_share(mood_tags):
+    """How much of this mood is playable together, from Steam's own counts.
+
+    Two count=1 requests. Without this the skill has no way to know whether asking
+    "alone or with someone?" would change anything, and a pointless question is exactly
+    what turns a recommendation into a form.
+    """
+    total_any, _ = steamweb.search_page(mood_tags, count=1, extra={"category1": 998})
+    total_coop, _ = steamweb.search_page(
+        mood_tags, count=1,
+        extra={"category1": 998, "category2": COMPANY_CATEGORY["coop"]})
+    if not total_any:
+        return 0, 0, 0.0
+    return total_any, total_coop, round(total_coop / total_any, 3)
+
+
+def collect(mood_tags, taste_by_tag, roles, by_id, company=None, verbose=True):
     """Run the search plan and return {appid: row}, the cross tags used, and a trace."""
     pool, trace = {}, []
+    base_extra = {"category1": 998}
+    if company in COMPANY_CATEGORY:
+        base_extra["category2"] = COMPANY_CATEGORY[company]
 
     def run(tags, sort, pages, label):
         got, total = 0, 0
         fresh = []
         for page in range(pages):
             total, rows = steamweb.search_page(tags, start=page * 50, count=50, sort=sort,
-                                               extra={"category1": 998})
+                                               extra=base_extra)
             for r in rows:
                 entry = pool.setdefault(r["appid"], r)
                 entry.setdefault("found_by", []).append(label)
@@ -157,7 +191,7 @@ def score(row, taste_by_tag, roles, wishlist, not_tried_ids, mood_tags):
 
 
 def build(taste, mood_tags, mood_label, limit=SHORTLIST, verbose=True,
-          outdir="data"):
+          outdir="data", company=None):
     by_name, by_id = steamweb.tag_dictionary()
     taste_by_tag = {t["tagid"]: t["weight"] for t in taste["tags"]}
     roles = {t["tagid"]: t["role"] for t in taste["tags"]}
@@ -177,7 +211,14 @@ def build(taste, mood_tags, mood_label, limit=SHORTLIST, verbose=True,
         print(f"Mood: {mood_label or '-'}  tags: "
               f"{', '.join(by_id.get(t, str(t)) for t in mood_tags)}")
 
-    pool, cross, trace = collect(mood_tags, taste_by_tag, roles, by_id, verbose)
+    total_any, total_coop, share = coop_share(mood_tags)
+    if verbose:
+        worth = (share >= ASK_COMPANY_MIN_SHARE and total_coop >= ASK_COMPANY_MIN_GAMES)
+        print(f"  co-op share of this mood: {total_coop}/{total_any} = {share:.0%}"
+              f"  -> {'worth asking about company' if worth else 'not worth asking'}"
+              + (f", filtering to {company}" if company in COMPANY_CATEGORY else ""))
+
+    pool, cross, trace = collect(mood_tags, taste_by_tag, roles, by_id, company, verbose)
 
     scored, rejected = [], {"owned": 0, "few_reviews": 0, "no_reviews": 0,
                             "no_overlap": 0, "blacklisted": 0}
@@ -220,6 +261,10 @@ def build(taste, mood_tags, mood_label, limit=SHORTLIST, verbose=True,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "mood": mood_label,
         "mood_tags": [{"tagid": t, "name": by_id.get(t, str(t))} for t in mood_tags],
+        "company": company if company in COMPANY_CATEGORY else None,
+        "coop_share": {"any": total_any, "coop": total_coop, "share": share,
+                       "worth_asking": (share >= ASK_COMPANY_MIN_SHARE
+                                        and total_coop >= ASK_COMPANY_MIN_GAMES)},
         "params": {"min_reviews": MIN_REVIEWS, "shortlist": limit,
                    "cross_tags": CROSS_TAGS, "wishlist_boost": WISHLIST_BOOST,
                    "off_mood_factor": OFF_MOOD_FACTOR,
@@ -265,6 +310,9 @@ def main():
     ap.add_argument("--outdir", default="data")
     ap.add_argument("--out", default=None, help="where to write the JSON")
     ap.add_argument("--limit", type=int, default=SHORTLIST)
+    ap.add_argument("--company", choices=["solo", "coop", "any"], default="any",
+                    help="solo = Steam's Single-player category, coop = its Co-op "
+                         "category; any leaves the catalogue unfiltered")
     args = ap.parse_args()
 
     taste_path = os.path.join(args.outdir, "taste.json")
@@ -274,11 +322,14 @@ def main():
     by_name, _ = steamweb.tag_dictionary(args.outdir)
     mood_tags = resolve_tags(args.tags.split(","), by_name)
 
-    res = build(taste, mood_tags, args.mood, args.limit, outdir=args.outdir)
+    res = build(taste, mood_tags, args.mood, args.limit, outdir=args.outdir,
+                company=args.company)
     report(res, args.limit)
 
     slug = "".join(ch if ch.isalnum() else "-" for ch in (args.mood or args.tags).lower())
     slug = "-".join(p for p in slug.split("-") if p)[:40]
+    if args.company in COMPANY_CATEGORY:
+        slug = f"{slug}-{args.company}"
     path = args.out or os.path.join(args.outdir, f"candidates_{slug}.json")
     with open(path, "w") as f:
         json.dump(res, f, ensure_ascii=False, indent=2)
