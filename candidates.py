@@ -197,6 +197,9 @@ def build(taste, mood_tags, mood_label, limit=SHORTLIST, verbose=True,
     roles = {t["tagid"]: t["role"] for t in taste["tags"]}
     owned = set(taste["owned_appids"])
     not_tried_ids = {g["appid"] for g in taste["not_tried"]}
+    # Played on a console or at a friend's place. Not owned on Steam, but finishing a
+    # game elsewhere is still a reason not to be offered it here.
+    played_elsewhere = set(taste.get("manual_appids") or [])
     wishlist = set(taste["wishlist_appids"])
     banned_games, banned_tags = blacklist.sets(outdir)
 
@@ -220,11 +223,14 @@ def build(taste, mood_tags, mood_label, limit=SHORTLIST, verbose=True,
 
     pool, cross, trace = collect(mood_tags, taste_by_tag, roles, by_id, company, verbose)
 
-    scored, rejected = [], {"owned": 0, "few_reviews": 0, "no_reviews": 0,
-                            "no_overlap": 0, "blacklisted": 0}
+    scored, rejected = [], {"owned": 0, "played_elsewhere": 0, "few_reviews": 0,
+                            "no_reviews": 0, "no_overlap": 0, "blacklisted": 0}
     for appid, row in pool.items():
         if is_blacklisted(row, banned_games, banned_tags):
             rejected["blacklisted"] += 1
+            continue
+        if appid in played_elsewhere:
+            rejected["played_elsewhere"] += 1
             continue
         if appid in owned and appid not in not_tried_ids:
             rejected["owned"] += 1
@@ -285,7 +291,8 @@ def build(taste, mood_tags, mood_label, limit=SHORTLIST, verbose=True,
 def report(res, top=40):
     r = res["rejected"]
     print(f"\nPool {res['pool_size']} -> eligible {res['eligible']} "
-          f"(dropped: owned {r['owned']}, <{MIN_REVIEWS} reviews {r['few_reviews']}, "
+          f"(dropped: owned {r['owned']}, played elsewhere {r['played_elsewhere']}, "
+          f"<{MIN_REVIEWS} reviews {r['few_reviews']}, "
           f"no reviews {r['no_reviews']}, no tag overlap {r['no_overlap']}, "
           f"blacklisted {r.get('blacklisted', 0)})")
     print(f"\n{'#':>3} {'score':>6} {'name':44s} {'reviews':>9} {'%':>4} {'released':12s} flags")
