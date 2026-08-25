@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.DS_Store
+
+# Personal library export, caches and the answer journal. Everything here is either
+# private to one Steam account or reproducible from the scripts.
+data/
