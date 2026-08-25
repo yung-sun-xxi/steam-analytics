@@ -146,6 +146,76 @@ python3 journal.py answer --mood "хочу страшное" --tags horror \
 
 Then one light line — «расскажи потом, как зайдёт» — and stop. No interrogation.
 
+## 5a. Games he played outside Steam
+
+The Steam library is not his gaming history — consoles, a friend's place, discs, and games
+that never shipped on Steam are all invisible. That is not a cosmetic gap: with no racing
+in the library, racing games can never surface, no matter how much Mario Kart he played.
+
+When he mentions playing something elsewhere — in passing or as a deliberate batch —
+record it. What a record needs is what the vector eats: **name, rough hours, rough year,
+tags.** Nothing else.
+
+```bash
+python3 manual_games.py resolve --name "Halo"          # look first
+python3 manual_games.py add --name "Halo Infinite" --appid 1240440 \
+    --hours 40 --year 2022 --platform xbox              # tags come from Steam
+python3 manual_games.py add --name "Mario Kart 8 Deluxe" --hours 200 --year 2018 \
+    --platform switch --tags "Racing,Multiplayer,Local Multiplayer,Arcade"
+python3 manual_games.py show
+```
+
+Then rerun `taste.py` — the merge happens there.
+
+**How to run the conversation:**
+
+- **Take the batch, not one game at a time.** He dictates a list by voice. Parse it, show
+  the whole parsed table back — name, appid, hours, year, tag source — let him correct it,
+  then write. Asking about each game in turn is the interrogation he does not want.
+- **Hours can be very rough.** The square root means a 2× error costs about 40% of the
+  weight, and decay swamps that. "немного" ≈ 10 h, "прилично" ≈ 50 h, "очень много" ≈ 200 h
+  are all fine. Do not make him think about it.
+- **When he last played it, you must ask for.** Guessing is worse than a vague answer:
+  counted as recent, a childhood game floods the vector; counted as old, it contributes
+  nothing and the record was pointless. For 300 hours a year of error moves the weight by
+  half again, so this is the one number where the answer really matters.
+
+  Take whatever precision he offers — `--last 2018` and `--last 2026-02` are both fine, and
+  a month only moves the weight by about 8%, so never push for one. If he does not
+  remember, do not stop: offer the ladder, which is answerable even with no memory of it.
+
+  | Он говорит | `--last` |
+  |---|---|
+  | в этом году | текущий год |
+  | в прошлом | −1 |
+  | года два-три назад | −3 |
+  | лет пять | −5 |
+  | очень давно, ещё в школе | −10 |
+
+  **And if he genuinely cannot place it at all, treat that as "long ago".** Not
+  remembering is itself the evidence: recent things get remembered. Pick an old year, and
+  say out loud that the date is a guess rather than burying it.
+
+- **A game he returns to in bursts is worth a note.** "Раз в полгода на неделю, четвёртый
+  год" does not fit in two numbers and must not — Steam gives the same two numbers for his
+  93 owned games, and a manual record richer than a Steam one would make the two
+  incomparable. Put it in `--note` instead: it does not touch the weight, and it gives you
+  something true and concrete to argue with later.
+- **Never take the first store match silently.** "Halo" resolves to The Master Chief
+  Collection, "Zelda" to a fan game. Show what matched and let him pick. A wrong appid is
+  silent corruption that nothing downstream can catch.
+- **Not on Steam is fine.** Write 8–10 tags yourself, best first, using names from the
+  store dictionary (`tags.py --find` checks them). Do not search the web for this — there
+  is no better source for "what kind of game is this" than you already have. If you do not
+  know the game, ask him one question about what it plays like.
+- **Tag order is the only weight these tags get.** Real Steam tags carry vote counts;
+  yours do not, and inventing counts would be indistinguishable from measured data. The
+  script spreads by rank instead, so put the defining tag first.
+
+Two consequences worth knowing: a game he also owns on Steam has its hours added to the
+Steam record rather than counted twice, and anything recorded here is excluded from
+recommendations — finishing Red Dead 2 on a PS4 is a good reason not to be offered it here.
+
 ## 6a. "Больше никогда это не предлагай"
 
 Passing on a game tonight is not a blacklist — repeats are deliberate. But when he says he

@@ -11,6 +11,10 @@ Tags then split by role (they are never removed):
   search tags  - rare in the catalogue, they define what we go looking for
   filter tags  - common everywhere (Singleplayer, Action), they only shape the output
 
+Games he played outside Steam (data/manual_games.json) are merged in here, because the
+vector is about him and not about which box the game ran on. An entry that matches a game
+he also owns adds its hours to it; anything else contributes on its own.
+
 Writes data/taste.json. Network use: backfilling missing per-game tags and one
 catalogue-search request per tag to measure its rarity. Both are cached on disk.
 """
@@ -22,6 +26,7 @@ import os
 import sys
 from datetime import datetime, timezone
 
+import manual_games
 import steamweb
 from steam_fetch import APPID_ALIASES
 
@@ -71,11 +76,54 @@ def backfill_tags(games, outdir, verbose=True):
     return len(missing)
 
 
+def merge_manual(games, manual):
+    """Fold games played outside Steam into one list of weight contributors.
+
+    An entry that matches a game he also owns adds its hours to that record and pushes
+    its last-played date forward if it is more recent - taste is about him, not about
+    which box the game ran on. Everything else contributes on its own.
+    """
+    merged_into_steam, standalone = {}, []
+    for m in manual:
+        appid = m.get("appid")
+        owned_match = next((g for g in games if appid is not None
+                            and g["appid"] == appid), None)
+        if owned_match:
+            merged_into_steam.setdefault(owned_match["appid"], []).append(m)
+        else:
+            standalone.append(m)
+
+    entries = []
+    for g in games:
+        extra = merged_into_steam.get(g["appid"], [])
+        minutes = (g.get("playtime_forever_min") or 0) + sum(
+            int(round(m["hours"] * 60)) for m in extra)
+        last = g.get("last_played")
+        for m in extra:
+            if not last or m["last_played"] > last:
+                last = m["last_played"]
+        entries.append({"appid": g["appid"], "name": g["name"],
+                        "playtime_forever_min": minutes, "last_played": last,
+                        "tags": None, "source": "steam+manual" if extra else "steam",
+                        "hours": round(minutes / 60.0, 1)})
+    for m in standalone:
+        entries.append({"appid": m.get("appid"), "name": m["name"],
+                        "playtime_forever_min": int(round(m["hours"] * 60)),
+                        "last_played": m["last_played"], "tags": m["tags"],
+                        "source": f"manual/{m['tags_source']}",
+                        "platform": m.get("platform"),
+                        "hours": m["hours"]})
+    return entries, merged_into_steam
+
+
 def build(bundle, outdir, verbose=True):
     games = bundle["games"]
     now_ts = datetime.now(timezone.utc).timestamp()
 
     backfill_tags(games, outdir, verbose)
+
+    manual = manual_games.load(outdir)
+    entries, merged_into_steam = merge_manual(games, manual)
 
     vector = {}          # tagid -> accumulated weight
     tag_names = {}
@@ -83,8 +131,8 @@ def build(bundle, outdir, verbose=True):
     per_game = []
     no_tags = []
 
-    for g in games:
-        tags = steamweb.game_tags(g["appid"], outdir)
+    for g in entries:
+        tags = g["tags"] if g["tags"] is not None else steamweb.game_tags(g["appid"], outdir)
         if not tags:
             no_tags.append(g["name"])
             continue
@@ -95,8 +143,8 @@ def build(bundle, outdir, verbose=True):
         w = game_weight(g, now_ts)
         per_game.append({
             "appid": g["appid"], "name": g["name"],
-            "hours": g["playtime_forever_h"], "last_played": g["last_played"],
-            "weight": round(w, 3),
+            "hours": g["hours"], "last_played": g["last_played"],
+            "source": g["source"], "weight": round(w, 3),
             "tagids": [t["tagid"] for t in top],
         })
         if w <= 0:
@@ -140,6 +188,9 @@ def build(bundle, outdir, verbose=True):
         })
 
     owned = {g["appid"] for g in games}
+    # Finishing Red Dead 2 on a PS4 is a good reason not to be offered it on Steam.
+    # This is a third state: not owned, but definitely not "never tried" either.
+    manual_appids = sorted({m["appid"] for m in manual if m.get("appid")} - owned)
     not_tried = [{"appid": g["appid"], "name": g["name"],
                   "minutes": g["playtime_forever_min"]}
                  for g in games if (g.get("playtime_forever_min") or 0) < NOT_TRIED_MAX_MIN]
@@ -162,9 +213,16 @@ def build(bundle, outdir, verbose=True):
             "search_tags": sum(1 for t in tags_out if t["role"] == "search"),
             "filter_tags": sum(1 for t in tags_out if t["role"] == "filter"),
             "not_tried": len(not_tried),
+            "manual_games": len(manual),
+            "manual_merged_into_owned": sum(len(v) for v in merged_into_steam.values()),
         },
         "games_without_tags": no_tags,
         "owned_appids": sorted(owned),
+        "manual_appids": manual_appids,
+        "manual_games": [{"name": m["name"], "appid": m.get("appid"),
+                          "hours": m["hours"], "year": m["year"],
+                          "platform": m.get("platform"),
+                          "tags_source": m["tags_source"]} for m in manual],
         "not_tried": sorted(not_tried, key=lambda x: x["minutes"]),
         "wishlist_appids": [w["appid"] for w in wishlist],
         "wishlist": wishlist,
@@ -178,13 +236,17 @@ def report(taste, top=25):
     print(f"\n{c['games_with_tags']}/{c['games']} games tagged, {c['tags']} distinct tags "
           f"({c['search_tags']} search / {c['filter_tags']} filter), "
           f"{c['not_tried']} in the not-yet-tried cohort")
+    if c.get("manual_games"):
+        print(f"{c['manual_games']} game(s) played outside Steam, "
+              f"{c['manual_merged_into_owned']} of them merged into an owned record")
     if taste["games_without_tags"]:
         print("No tags at all: " + ", ".join(taste["games_without_tags"]))
 
     print(f"\nHeaviest games (weight = sqrt(h) * decay):")
     for g in taste["game_weights"][:10]:
+        mark = "" if g.get("source") == "steam" else f"  <{g.get('source')}>"
         print(f"  {g['weight']:6.2f}  {g['name'][:42]:42s} {g['hours']:7.1f} h  "
-              f"{(g['last_played'] or '')[:10]}")
+              f"{(g['last_played'] or '')[:10]}{mark}")
 
     for role in ("search", "filter"):
         rows = [t for t in taste["tags"] if t["role"] == role][:top]

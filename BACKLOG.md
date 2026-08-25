@@ -3,7 +3,7 @@
 Stage 1 (library export) and stage 2 (the recommender skill) are built and working. This
 is what is deliberately not built yet. The deferred list in `HANDOFF.md` is folded in
 here; that document stays as the original brief. Already done and dropped from this list:
-the blacklist of games and tags (`blacklist.py`), and the alone-or-with-someone filter. Time and pace were deliberately not built as their own axis - they go through the mood tags like any other word.
+the blacklist of games and tags (`blacklist.py`), and the alone-or-with-someone filter. Time and pace were deliberately not built as their own axis - they go through the mood tags like any other word. Games played outside Steam are in as well (`manual_games.py`).
 
 **The order is the priority, and it is only my opinion.** Ranking weighs how much an item
 would change an answer against what it costs to build; anything that cannot be built until
@@ -45,84 +45,7 @@ Free side effect: log every snapshot into `journal.jsonl` and in a few months th
 local history, which the official API does not provide — that is where a growing/dying
 trend would come from.
 
-## 2. Games played outside Steam
-
-Explicitly wanted, and the reason is concrete: the Steam library says there is no racing
-in his life, which is exactly why racing games never surface. If he put 200 hours into
-Mario Kart on a console, that conclusion is simply wrong. Consoles, a friend's place,
-discs, and games that never shipped on Steam are all invisible today.
-
-### What the taste vector actually needs
-
-Weight is `sqrt(hours) * 0.5 ** (years_since_last_played / 3)`, spread across the game's
-**tags**. That is the whole input. Reviews, ratings, prices and store pages are needed for
-*candidates* — the games we recommend — and play no part in a game that only shapes taste.
-
-So the requirement for a manual entry is: **name, rough hours, rough date, and tags**.
-Being on Steam is not a requirement; Steam is just the cheapest tag source.
-
-### Required fields, and how loose each may be
-
-- **Name** — required. Without it there is nothing to resolve or display.
-- **Hours** — required. Without hours a game cannot contribute weight, which makes the
-  record pointless. Precision barely matters: the square root means a 2× error costs about
-  40% of the weight, and decay swamps that. "немного" ≈ 10 h, "прилично" ≈ 50 h,
-  "очень много" ≈ 200 h are all usable. Do not make him think.
-- **Date, year granularity** — required in practice, though it can be vague. Skipping it
-  is worse than a rough guess: treated as recent, a childhood game floods the vector;
-  treated as old, it contributes nothing and the entry was pointless. "лет пять назад" and
-  "ещё в школе" convert fine. Ask, accept anything, never silently default.
-- **Tags** — required, sourced as below.
-
-### Tags: Steam first, model second
-
-Resolve the name through `store.steampowered.com/api/storesearch/?term=<name>&cc=<cc>&l=english`,
-then pull the real tags exactly as `steamweb.game_tags` already does. This is the good path
-and most games take it.
-
-**Never accept the first search hit silently.** "Halo" returns The Master Chief Collection,
-"Zelda" returns a fan game or nothing. Show what was matched and let him correct it — a
-wrong match is silent data corruption that nothing downstream can detect.
-
-When the game is genuinely not on Steam, have the model write 8–10 tags from the Steam tag
-dictionary (`data/cache/tagdict.json`, so they join the same vector space). Searching the
-web adds nothing here — there is no better source for "what kind of game is this" than the
-model already has. If the model does not know the game, ask him one question about what it
-plays like, and stop there.
-
-**The honest problem with model-written tags** is not the tag names, it is the vote counts.
-Real Steam tags carry vote counts, and weight is spread proportionally to them. Inventing
-counts would produce numbers indistinguishable from measured ones. Instead, spread by rank
-(first tag heaviest, last lightest, roughly matching a typical Steam vote curve) and record
-`tags_source: "model"` on the entry so the difference stays visible.
-
-### Storage: a separate file, or the next refresh eats it
-
-`steam_fetch.py` rewrites `data/steam_library.json` on every run, so manual entries cannot
-live there. Put them in `data/manual_games.json` and have `taste.py` merge them when it
-builds the vector. Getting this wrong means the first skill run after the feature ships
-silently destroys everything he dictated.
-
-### Merging with the Steam library
-
-If a manual entry resolves to an appid he already owns — 80 hours of GTA 5 on PS4, 5 hours
-on Steam — merge them into one record: hours add up, the more recent date wins. Taste is
-about him, not about which box the game ran on.
-
-### Exclusion
-
-Manual games join the exclusion set: having finished Red Dead 2 on PS4 is a good reason
-not to be offered Red Dead 2 on Steam. This is a third state, not the "not yet tried"
-cohort, and needs its own flag — the never-launched cohort is deliberately recommendable,
-these are not.
-
-### Input flow
-
-He dictates a batch by voice, not one game at a time. Parse the batch, show the parsed
-table in full — name, matched appid, hours, year, tag source — let him correct it, then
-write. No per-game interrogation.
-
-## 3. Steam country, and the prices that follow from it
+## 2. Steam country, and the prices that follow from it
 
 Steam prices differ by country, and the skill currently shows prices without ever
 establishing which country's store applies. Right now `steam_fetch.py` defaults to
@@ -141,27 +64,27 @@ gets asked forever after telling it not to.
 So the rule is: no stored country → ask every time; stored country → use it silently and
 never ask again until he says otherwise.
 
-## 4. Prompts for "не знаю, чего хочу"
+## 3. Prompts for "не знаю, чего хочу"
 
 Right now the skill asks about mood and needs an answer. It should be able to offer two or
 three angles instead of a blank prompt: something new, something niche but well reviewed,
 something calm, something demanding. `SKILL.md` mentions this in one line; it needs actual
 rubrics and probably its own tag sets.
 
-## 5. Auto-matching recommendations against the library
+## 4. Auto-matching recommendations against the library
 
 Every answer is already logged with appids. The refresh already knows playtime per game.
 So the skill can notice on its own that a recommended game showed up in the library with
 hours on it — that is feedback without asking for feedback, and the strongest signal
 available. Needs the journal read at refresh time and a rule for what to do with a match.
 
-## 6. Typed feedback
+## 5. Typed feedback
 
 `journal.py feedback` takes free text today, which is right for now: a form would turn a
 recommendation into an interrogation. Once there are twenty or thirty entries, look at what
 he actually writes and derive the fields from that, rather than guessing them upfront.
 
-## 7. Revisit `sqrt(hours)`
+## 6. Revisit `sqrt(hours)`
 
 Flagged as an MVP choice from the start. Square root plus a 3-year half-life is what keeps
 364 h of Baldur's Gate 3 from burying everything else, but the exact curve was never

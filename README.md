@@ -69,6 +69,8 @@ python3 tags.py --find horror --mine 30 --role search   # look up mood tags
 python3 candidates.py --tags horror --mood "хочу страшное" --company coop
 python3 journal.py show                                 # what was recommended, what he said
 python3 blacklist.py add-tag --name "Anime"             # never recommend this again
+python3 manual_games.py add --name "Mario Kart 8 Deluxe" --hours 200 --year 2018 \
+    --platform switch --tags "Racing,Multiplayer,Arcade"
 ```
 
 | File | What it is |
@@ -79,6 +81,7 @@ python3 blacklist.py add-tag --name "Anime"             # never recommend this a
 | `candidates.py` | ~40 scored candidates for one mood → `data/candidates_<mood>.json` |
 | `journal.py` | append-only log of answers and free-text feedback → `data/journal.jsonl` |
 | `blacklist.py` | games and tags never to recommend again → `data/blacklist.json` |
+| `manual_games.py` | games played outside Steam → `data/manual_games.json`, merged by `taste.py` |
 | `.claude/skills/steam-shaman/SKILL.md` | the skill that drives all of the above |
 
 **How a game is weighted.** `sqrt(hours) * 0.5 ** (years_since_last_played / 3)`. Square
@@ -107,6 +110,15 @@ dropped — it can still be offered as a labelled risky bet.
 
 Owned games are excluded, except the never-really-tried cohort (under an hour played),
 which stays and is flagged. Wishlisted games are boosted. The review floor is 500.
+
+**Games played outside Steam count too.** A Steam library is not a gaming history:
+consoles, a friend's place and discs are invisible, and with no racing in the library
+racing games can never surface. `manual_games.py` records name, rough hours, a rough year
+and tags — that is everything the vector eats; reviews and ratings matter only for games
+being recommended. Tags come from Steam when the game is there, and are written by hand
+when it is not, spread by rank rather than by invented vote counts and marked
+`tags_source: "model"`. An entry matching a game already owned adds its hours to that
+record; everything recorded here is excluded from recommendations.
 
 **The blacklist is separate from passing on a game.** Skipping a recommendation leaves it
 recommendable — a mood mismatch is not a verdict. `blacklist.py` is for the other
