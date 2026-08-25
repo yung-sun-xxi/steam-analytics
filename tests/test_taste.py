@@ -58,6 +58,21 @@ class GameWeight(unittest.TestCase):
         self.assertLessEqual(taste.game_weight(game(100, -2), NOW), math.sqrt(100) + 1e-9)
 
 
+class Counts(unittest.TestCase):
+    def test_the_total_covers_manual_games_too(self):
+        """The denominator has to include everything that can contribute weight, or the
+        report prints a count larger than its own total."""
+        games = [{"appid": 1, "name": "a", "playtime_forever_min": 60,
+                  "last_played": "2025-01-01T00:00:00+00:00"}]
+        manual = [{"appid": None, "name": "Fortnite", "hours": 300,
+                   "last_played": "2026-02-15T00:00:00+00:00",
+                   "tags": [{"tagid": 1, "name": "x", "count": 1}],
+                   "tags_source": "model"}]
+        entries, _ = taste.merge_manual(games, manual)
+        self.assertEqual(len(entries), 2)
+        self.assertGreaterEqual(len(entries), len(games))
+
+
 class NotTriedCohort(unittest.TestCase):
     def test_threshold_is_an_hour(self):
         self.assertEqual(taste.NOT_TRIED_MAX_MIN, 60)

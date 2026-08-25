@@ -206,7 +206,11 @@ def build(bundle, outdir, verbose=True):
             "not_tried_max_minutes": NOT_TRIED_MAX_MIN,
         },
         "counts": {
-            "games": len(games),
+            # Everything that can contribute weight: owned games plus anything he played
+            # outside Steam. Counting only the Steam library here once produced a
+            # "94/93 games tagged" line.
+            "games": len(entries),
+            "steam_games": len(games),
             "games_with_tags": len(per_game),
             "games_without_tags": len(no_tags),
             "tags": len(tags_out),
