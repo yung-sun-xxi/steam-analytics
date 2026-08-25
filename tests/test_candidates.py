@@ -44,6 +44,29 @@ class ResolveTags(unittest.TestCase):
             candidates.resolve_tags(["definitely-not-a-tag"], self.by_name)
 
 
+class CompanyFilter(unittest.TestCase):
+    def test_categories_are_steam_player_support_ids(self):
+        self.assertEqual(candidates.COMPANY_CATEGORY["solo"], 2)
+        self.assertEqual(candidates.COMPANY_CATEGORY["coop"], 9)
+
+    def worth(self, total_any, total_coop):
+        share = total_coop / total_any
+        return (share >= candidates.ASK_COMPANY_MIN_SHARE
+                and total_coop >= candidates.ASK_COMPANY_MIN_GAMES)
+
+    def test_a_mood_full_of_co_op_is_worth_asking_about(self):
+        self.assertTrue(self.worth(5633, 1265))    # Survival, 22.5%
+        self.assertTrue(self.worth(9650, 1041))    # Horror, 10.8%
+
+    def test_a_solo_mood_is_not(self):
+        self.assertFalse(self.worth(14013, 677))   # Story Rich, 4.8%
+        self.assertFalse(self.worth(13734, 820))   # Puzzle, 6.0%
+
+    def test_a_good_share_of_almost_nothing_is_not(self):
+        """Colony Sim is 10.8% co-op, but that is 89 games - too thin to answer from."""
+        self.assertFalse(self.worth(821, 89))
+
+
 class Score(unittest.TestCase):
     def test_rare_tags_count_twice_over(self):
         """A rare tag lands in taste_fit and again in rare_fit; a common one does not."""

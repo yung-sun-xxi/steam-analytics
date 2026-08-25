@@ -66,7 +66,7 @@ release-era distribution, recent activity windows, wishlist.
 ```
 python3 taste.py                                        # tag-space taste vector
 python3 tags.py --find horror --mine 30 --role search   # look up mood tags
-python3 candidates.py --tags horror --mood "хочу страшное"
+python3 candidates.py --tags horror --mood "хочу страшное" --company coop
 python3 journal.py show                                 # what was recommended, what he said
 python3 blacklist.py add-tag --name "Anime"             # never recommend this again
 ```
@@ -90,6 +90,14 @@ game's own Steam tags, proportional to each tag's share of votes.
 tags — they decide what to go looking for. Common ones (Singleplayer, Action) are *filter*
 tags — they only shape the ranking. Racing stays out because there is no racing in the
 library, not because anything is penalised.
+
+**Everything the user says is a mood keyword** — pace, length, tone, all of it resolves to
+tags. Nothing about mood is hardcoded, so a bad tag choice is fixed by saying it
+differently, not by editing code. The single exception is company: `--company solo|coop`
+maps to Steam's own player-support categories, declared by the developer. The `Co-op` tag
+is voted on and lies — Dead by Daylight carries one and has no single-player mode. Before
+searching, the script reports the mood's co-op share so the skill can tell whether asking
+"alone or with someone?" would change anything at all.
 
 **Mood drives, taste follows.** The mood picks the search tags; the taste vector decides
 which of the fitting games float up. Candidates are crossed only with the rare tags that

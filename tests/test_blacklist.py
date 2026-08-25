@@ -74,6 +74,20 @@ class Storage(unittest.TestCase):
         self.assertEqual(entry["reason"], "надоел")
         self.assertTrue(entry["at"].startswith("20"))
 
+    def test_appid_only_still_gets_a_name_from_the_library(self):
+        """A blacklist of bare numbers is unreadable when he later runs `show`."""
+        with open(os.path.join(self.dir, "steam_library.json"), "w") as f:
+            json.dump({"games": [{"appid": 730, "name": "Counter-Strike 2"}]}, f)
+        appid, name = blacklist.resolve_game(
+            Args(outdir=self.dir, appid=730))
+        self.assertEqual((appid, name), (730, "Counter-Strike 2"))
+
+    def test_explicit_name_wins_over_lookup(self):
+        with open(os.path.join(self.dir, "steam_library.json"), "w") as f:
+            json.dump({"games": [{"appid": 730, "name": "Counter-Strike 2"}]}, f)
+        self.assertEqual(
+            blacklist.resolve_game(Args(outdir=self.dir, appid=730, name="CS"))[1], "CS")
+
     def test_remove_by_appid_and_by_name(self):
         blacklist.cmd_add_game(Args(outdir=self.dir, appid=1, name="Alpha"))
         blacklist.cmd_add_game(Args(outdir=self.dir, appid=2, name="Beta"))

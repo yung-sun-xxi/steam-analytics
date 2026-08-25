@@ -23,6 +23,7 @@ import sys
 from datetime import datetime, timezone
 
 import steamweb
+from steam_fetch import fetch_store
 
 FILENAME = "blacklist.json"
 EMPTY = {"games": [], "tags": []}
@@ -63,6 +64,24 @@ def now():
 
 # ---------------------------------------------------------------- name resolution
 
+def name_for_appid(appid, outdir, cc):
+    """A blacklist of bare numbers is unreadable, so an appid still gets its name.
+
+    His library first (offline), then the store payload, which is cached anyway.
+    """
+    lib = os.path.join(outdir, "steam_library.json")
+    if os.path.exists(lib):
+        with open(lib) as f:
+            try:
+                for g in json.load(f).get("games") or []:
+                    if g.get("appid") == appid and g.get("name"):
+                        return g["name"]
+            except json.JSONDecodeError:
+                pass
+    store = fetch_store(appid, outdir, steamweb.STORE_PAUSE, cc) or {}
+    return store.get("name") or str(appid)
+
+
 def library_matches(name, outdir):
     """Look in his own library first - no network, and the names are exact."""
     lib = os.path.join(outdir, "steam_library.json")
@@ -81,7 +100,7 @@ def library_matches(name, outdir):
 def resolve_game(args):
     """Return (appid, name) or exit. Never guesses between several matches."""
     if args.appid:
-        return args.appid, args.name or str(args.appid)
+        return args.appid, args.name or name_for_appid(args.appid, args.outdir, args.cc)
     if not args.name:
         sys.exit("Give --appid or --name.")
 
