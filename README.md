@@ -68,6 +68,7 @@ python3 taste.py                                        # tag-space taste vector
 python3 tags.py --find horror --mine 30 --role search   # look up mood tags
 python3 candidates.py --tags horror --mood "хочу страшное"
 python3 journal.py show                                 # what was recommended, what he said
+python3 blacklist.py add-tag --name "Anime"             # never recommend this again
 ```
 
 | File | What it is |
@@ -77,6 +78,7 @@ python3 journal.py show                                 # what was recommended, 
 | `tags.py` | tag lookup: rarity in the catalogue, weight in his own vector |
 | `candidates.py` | ~40 scored candidates for one mood → `data/candidates_<mood>.json` |
 | `journal.py` | append-only log of answers and free-text feedback → `data/journal.jsonl` |
+| `blacklist.py` | games and tags never to recommend again → `data/blacklist.json` |
 | `.claude/skills/steam-shaman/SKILL.md` | the skill that drives all of the above |
 
 **How a game is weighted.** `sqrt(hours) * 0.5 ** (years_since_last_played / 3)`. Square
@@ -97,3 +99,9 @@ dropped — it can still be offered as a labelled risky bet.
 
 Owned games are excluded, except the never-really-tried cohort (under an hour played),
 which stays and is flagged. Wishlisted games are boosted. The review floor is 500.
+
+**The blacklist is separate from passing on a game.** Skipping a recommendation leaves it
+recommendable — a mood mismatch is not a verdict. `blacklist.py` is for the other
+statement: never offer this again. It drops banned games and every candidate carrying a
+banned tag, and it does not touch the taste vector, which describes what was played rather
+than what is wanted next.

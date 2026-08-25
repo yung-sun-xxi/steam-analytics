@@ -1,7 +1,8 @@
 # Backlog — steam-shaman
 
 Stage 1 (library export) and stage 2 (the recommender skill) are built and working.
-This is what is deliberately not built yet. Ordered by what would change an answer the
+This is what is deliberately not built yet. Done and removed from this
+list: the blacklist of games and tags (`blacklist.py`). Ordered by what would change an answer the
 most, not by effort. The deferred list in `HANDOFF.md` is folded in here; that document
 stays as the original brief.
 
@@ -161,12 +162,7 @@ of the shortlist is relevant.
 recommendation into an interrogation. Once there are twenty or thirty entries, look at what
 he actually writes and derive the fields from that, rather than guessing them upfront.
 
-## 8. Blacklist of games and genres
-
-No way to say "never offer me this again". Repeats are deliberate — a mood mismatch does
-not blacklist a game — but a genuine "I hate this genre" has nowhere to live.
-
-## 9. Revisit `sqrt(hours)`
+## 8. Revisit `sqrt(hours)`
 
 Flagged as an MVP choice from the start. Square root plus a 3-year half-life is what keeps
 364 h of Baldur's Gate 3 from burying everything else, but the exact curve was never

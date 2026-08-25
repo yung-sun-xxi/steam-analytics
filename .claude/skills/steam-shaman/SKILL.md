@@ -115,6 +115,36 @@ python3 journal.py answer --mood "хочу страшное" --tags horror \
 
 Then one light line — «расскажи потом, как зайдёт» — and stop. No interrogation.
 
+## 6a. "Больше никогда это не предлагай"
+
+Passing on a game tonight is not a blacklist — repeats are deliberate. But when he says he
+does not want to see something again, record it, because nothing else in the system
+remembers that:
+
+```bash
+python3 blacklist.py add-game --name "Dead by Daylight" --reason "надоел"
+python3 blacklist.py add-tag  --name "Anime"
+python3 blacklist.py show
+python3 blacklist.py remove --appid 381210
+```
+
+`candidates.py` reads the blacklist on every run: a banned game is dropped, and so is any
+candidate carrying a banned tag. The shortlist reports how many were dropped
+(`blacklist.dropped`) — mention it only if the number is large enough to explain a thin
+list.
+
+Two things to get right:
+
+- **Name lookup does not guess.** Several matches means it lists them and stops; pass
+  `--appid` to settle it. Do not reach for `--first` to move things along — a wrong appid
+  bans the wrong game silently.
+- **A banned tag can contradict the mood.** If he blacklisted `Horror` and then asks for
+  something scary, `candidates.py` prints a warning and returns almost nothing. Say that
+  out loud rather than reporting an empty list: he banned this, does he want it lifted?
+
+Never add anything to the blacklist on your own judgement. Every entry is something he
+actually said.
+
 ## 7. Feedback, whenever it arrives
 
 Any time he says something about a recommended game — right away or three weeks later —
