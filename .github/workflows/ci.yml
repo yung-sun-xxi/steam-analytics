@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Stdlib only, no dependencies to install. Byte-compiling every module is the
+      # closest thing this project has to a build step.
+      - name: Build
+        run: python -m compileall -q .
+
+      # Every test runs offline against fixtures; nothing here touches the Steam APIs.
+      - name: Test
+        run: python -m unittest discover -s tests -t . -v

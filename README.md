@@ -29,6 +29,15 @@ Useful flags: `--no-store` (skip store metadata, much faster), `--no-achievement
 `--min-playtime 30` (achievements only for games actually played), `--cc es` (price region),
 `--store-pause 1.5` (store API throttles at roughly 200 requests / 5 min).
 
+## Tests
+
+```
+python3 -m unittest discover -s tests -t .
+```
+
+Everything runs offline against fixtures — the suite never calls Steam. CI runs the same
+command on every pull request.
+
 ## Outputs (`data/`)
 
 | File | What it is |
