@@ -205,7 +205,9 @@ def cmd_show(args):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--outdir", default="data")
-    ap.add_argument("--cc", default="es", help="store country for name lookup")
+    ap.add_argument("--cc", default=None,
+                    help="store country for the name lookup; only decides which "
+                         "regional edition surfaces, no price is read here")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     g = sub.add_parser("add-game", help="never recommend this game again")

@@ -16,7 +16,7 @@ tags crossed with his own rare tags - but only the ones that actually live next 
 mood in the catalogue, so "хочу подумать" does not quietly become another survival list.
 Owned games are dropped except the never-really-tried cohort, which stays and is flagged.
 
-  python3 candidates.py --tags horror,survival-horror --mood "хочу страшное"
+  python3 candidates.py --cc am --tags horror,survival-horror --mood "хочу страшное"
 """
 
 import argparse
@@ -103,6 +103,8 @@ def coop_share(mood_tags):
     Two count=1 requests. Without this the skill has no way to know whether asking
     "alone or with someone?" would change anything, and a pointless question is exactly
     what turns a recommendation into a form.
+
+    No country here on purpose: these are catalogue counts, and no price is read.
     """
     total_any, _ = steamweb.search_page(mood_tags, count=1, extra={"category1": 998})
     total_coop, _ = steamweb.search_page(
@@ -113,7 +115,7 @@ def coop_share(mood_tags):
     return total_any, total_coop, round(total_coop / total_any, 3)
 
 
-def collect(mood_tags, taste_by_tag, roles, by_id, company=None, verbose=True):
+def collect(mood_tags, taste_by_tag, roles, by_id, cc, company=None, verbose=True):
     """Run the search plan and return {appid: row}, the cross tags used, and a trace."""
     pool, trace = {}, []
     base_extra = {"category1": 998}
@@ -125,7 +127,7 @@ def collect(mood_tags, taste_by_tag, roles, by_id, company=None, verbose=True):
         fresh = []
         for page in range(pages):
             total, rows = steamweb.search_page(tags, start=page * 50, count=50, sort=sort,
-                                               extra=base_extra)
+                                               extra=base_extra, cc=cc)
             for r in rows:
                 entry = pool.setdefault(r["appid"], r)
                 entry.setdefault("found_by", []).append(label)
@@ -190,7 +192,7 @@ def score(row, taste_by_tag, roles, wishlist, not_tried_ids, mood_tags):
     }
 
 
-def build(taste, mood_tags, mood_label, limit=SHORTLIST, verbose=True,
+def build(taste, mood_tags, mood_label, cc, limit=SHORTLIST, verbose=True,
           outdir="data", company=None):
     by_name, by_id = steamweb.tag_dictionary()
     taste_by_tag = {t["tagid"]: t["weight"] for t in taste["tags"]}
@@ -213,6 +215,7 @@ def build(taste, mood_tags, mood_label, limit=SHORTLIST, verbose=True,
     if verbose:
         print(f"Mood: {mood_label or '-'}  tags: "
               f"{', '.join(by_id.get(t, str(t)) for t in mood_tags)}")
+        print(f"  store country: {cc} - every price below is from that store")
 
     total_any, total_coop, share = coop_share(mood_tags)
     if verbose:
@@ -221,7 +224,8 @@ def build(taste, mood_tags, mood_label, limit=SHORTLIST, verbose=True,
               f"  -> {'worth asking about company' if worth else 'not worth asking'}"
               + (f", filtering to {company}" if company in COMPANY_CATEGORY else ""))
 
-    pool, cross, trace = collect(mood_tags, taste_by_tag, roles, by_id, company, verbose)
+    pool, cross, trace = collect(mood_tags, taste_by_tag, roles, by_id, cc, company,
+                                 verbose)
 
     scored, rejected = [], {"owned": 0, "played_elsewhere": 0, "few_reviews": 0,
                             "no_reviews": 0, "no_overlap": 0, "blacklisted": 0}
@@ -265,6 +269,7 @@ def build(taste, mood_tags, mood_label, limit=SHORTLIST, verbose=True,
 
     result = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        "cc": cc,
         "mood": mood_label,
         "mood_tags": [{"tagid": t, "name": by_id.get(t, str(t))} for t in mood_tags],
         "company": company if company in COMPANY_CATEGORY else None,
@@ -295,7 +300,9 @@ def report(res, top=40):
           f"<{MIN_REVIEWS} reviews {r['few_reviews']}, "
           f"no reviews {r['no_reviews']}, no tag overlap {r['no_overlap']}, "
           f"blacklisted {r.get('blacklisted', 0)})")
-    print(f"\n{'#':>3} {'score':>6} {'name':44s} {'reviews':>9} {'%':>4} {'released':12s} flags")
+    print(f"Store: {res.get('cc') or '?'}")
+    print(f"\n{'#':>3} {'score':>6} {'name':36s} {'price':>10} {'reviews':>9} {'%':>4} "
+          f"{'released':12s} flags")
     for i, c in enumerate(res["candidates"][:top], 1):
         flags = []
         if c["wishlisted"]:
@@ -304,7 +311,8 @@ def report(res, top=40):
             flags.append("owned-untried")
         if not c["mood_tag_on_card"]:
             flags.append("off-mood")
-        print(f"{i:>3} {c['score']:>6.1f} {(c['name'] or '?')[:44]:44s} "
+        print(f"{i:>3} {c['score']:>6.1f} {(c['name'] or '?')[:36]:36s} "
+              f"{(c.get('price_display') or '-')[:10]:>10} "
               f"{c['review_count']:>9} {c['review_pct'] or 0:>3}% "
               f"{(c['release_date'] or '')[:12]:12s} {','.join(flags)}")
         print(f"      {', '.join(c['tags'][:8])}")
@@ -313,6 +321,10 @@ def report(res, top=40):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--tags", required=True, help="comma-separated mood tag names or tagids")
+    ap.add_argument("--cc", required=True,
+                    help="Steam store country for prices, e.g. am. Required on purpose: "
+                         "without it Steam picks a store from the IP and the answer "
+                         "quotes a region nobody chose")
     ap.add_argument("--mood", default="", help="the mood in his own words, for the log")
     ap.add_argument("--outdir", default="data")
     ap.add_argument("--out", default=None, help="where to write the JSON")
@@ -329,7 +341,7 @@ def main():
     by_name, _ = steamweb.tag_dictionary(args.outdir)
     mood_tags = resolve_tags(args.tags.split(","), by_name)
 
-    res = build(taste, mood_tags, args.mood, args.limit, outdir=args.outdir,
+    res = build(taste, mood_tags, args.mood, args.cc, args.limit, outdir=args.outdir,
                 company=args.company)
     report(res, args.limit)
 

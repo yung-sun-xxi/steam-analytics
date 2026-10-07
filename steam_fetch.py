@@ -303,7 +303,10 @@ def main():
     ap.add_argument("--steamid", required=True, help="SteamID64 or vanity name")
     ap.add_argument("--key", help="Steam Web API key (default: Keychain/env)")
     ap.add_argument("--outdir", default="data")
-    ap.add_argument("--cc", default="es", help="store country code for prices")
+    ap.add_argument("--cc", required=True,
+                    help="Steam store country code for prices, e.g. am. Required on "
+                         "purpose: a default would silently price the library in a "
+                         "region he never chose")
     ap.add_argument("--no-achievements", action="store_true")
     ap.add_argument("--no-store", action="store_true")
     ap.add_argument("--store-pause", type=float, default=1.5,
@@ -389,6 +392,9 @@ def main():
 
     bundle = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        # Which store the prices below came from. Without it a stored export cannot be
+        # told apart from one fetched in another country.
+        "cc": args.cc,
         "profile": profile,
         "counts": {
             "owned": len(owned),

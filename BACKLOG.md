@@ -5,8 +5,9 @@ what is deliberately not built yet. `HANDOFF.md` is the live project handoff: ar
 settled decisions, verified endpoints and known rough edges — read it first.
 
 Already done and dropped from this list: the blacklist of games and tags
-(`blacklist.py`), the alone-or-with-someone filter, and games played outside Steam
-(`manual_games.py`). Time and pace were deliberately *not* built as their own axis — they
+(`blacklist.py`), the alone-or-with-someone filter, games played outside Steam
+(`manual_games.py`), and the Steam store country — `--cc` is now required by both
+`steam_fetch.py` and `candidates.py`, and Armenia (`am`) is stored in memory. Time and pace were deliberately *not* built as their own axis — they
 go through the mood tags like any other word he says.
 
 **The order is the priority, and it is only my opinion.** Ranking weighs how much an item
@@ -49,46 +50,27 @@ Free side effect: log every snapshot into `journal.jsonl` and in a few months th
 local history, which the official API does not provide — that is where a growing/dying
 trend would come from.
 
-## 2. Steam country, and the prices that follow from it
-
-Steam prices differ by country, and the skill currently shows prices without ever
-establishing which country's store applies. Right now `steam_fetch.py` defaults to
-`--cc es` for his own library, while `candidates.py` sends no country at all to the
-search endpoint, so candidate prices are whatever the store guesses from the IP. Two
-different regions in one answer, neither of them confirmed.
-
-**Ask on every request** which Steam country he is in, and look up prices in that store —
-the search endpoint takes `&cc=<code>`, so this is a parameter, not a new source.
-
-**Unless he says to remember it.** If he asks to store the country and stop being asked,
-write it down and stop asking. Not a preference buried in a config file — it has to be
-the memory the skill actually reads before deciding whether to ask. Anything else and he
-gets asked forever after telling it not to.
-
-So the rule is: no stored country → ask every time; stored country → use it silently and
-never ask again until he says otherwise.
-
-## 3. Prompts for "не знаю, чего хочу"
+## 2. Prompts for "не знаю, чего хочу"
 
 Right now the skill asks about mood and needs an answer. It should be able to offer two or
 three angles instead of a blank prompt: something new, something niche but well reviewed,
 something calm, something demanding. `SKILL.md` mentions this in one line; it needs actual
 rubrics and probably its own tag sets.
 
-## 4. Auto-matching recommendations against the library
+## 3. Auto-matching recommendations against the library
 
 Every answer is already logged with appids. The refresh already knows playtime per game.
 So the skill can notice on its own that a recommended game showed up in the library with
 hours on it — that is feedback without asking for feedback, and the strongest signal
 available. Needs the journal read at refresh time and a rule for what to do with a match.
 
-## 5. Typed feedback
+## 4. Typed feedback
 
 `journal.py feedback` takes free text today, which is right for now: a form would turn a
 recommendation into an interrogation. Once there are twenty or thirty entries, look at what
 he actually writes and derive the fields from that, rather than guessing them upfront.
 
-## 6. Revisit `sqrt(hours)`
+## 5. Revisit `sqrt(hours)`
 
 Flagged as an MVP choice from the start. Square root plus a 3-year half-life is what keeps
 364 h of Baldur's Gate 3 from burying everything else, but the exact curve was never
