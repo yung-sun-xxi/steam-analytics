@@ -17,9 +17,15 @@ Speak Russian with him. He dictates by voice, so read intent, not letters.
 ## 1. Refresh
 
 ```bash
-python3 steam_fetch.py --steamid 76561198059286732 --quick
+python3 steam_fetch.py --steamid 76561198059286732 --cc am --quick
 python3 taste.py
 ```
+
+`--cc` is the Steam store country and both scripts require it, because a default would
+quietly price everything in a region he never chose. **His country is Armenia, `am`** —
+stored in memory on 2026-08-25 at his request, so do not ask. Ask again only if he says
+the region changed, and then write the new one down instead of asking every time. The
+same `--cc` goes to `candidates.py`; one answer must never mix two stores.
 
 `--quick` re-pulls playtime, wishlist and recent activity, and reuses achievements for
 every game whose playtime has not moved. `taste.py` is offline unless new games appeared;
@@ -85,7 +91,7 @@ co-op share of this mood: 1041/9650 = 11%  -> worth asking about company
 Then rerun with the answer:
 
 ```bash
-python3 candidates.py --tags horror --mood "хочу страшное" --company coop
+python3 candidates.py --tags horror --mood "хочу страшное" --cc am --company coop
 ```
 
 `solo` is Steam's Single-player category, `coop` its Co-op category — both declared by the
@@ -99,13 +105,17 @@ in the answer: "истории здесь у тебя нет, это по реп
 ## 4. Build the shortlist
 
 ```bash
-python3 candidates.py --tags horror --mood "хочу страшное" --limit 40
+python3 candidates.py --tags horror --mood "хочу страшное" --cc am --limit 40
 ```
 
 Writes `data/candidates_<mood>.json`. Read that file — it carries everything you need to
 argue: tags, release date, review count and score, price, store URL, and the score
 breakdown (`taste_fit`, `rare_fit`, `common_fit`, `review_quality`, `mood_tag_on_card`,
 `wishlisted`, `owned_not_tried`).
+
+**Quote `price_display`, never `price_final`.** The display string is what the store
+printed, currency and all (`$14.49`); the number is bare cents and is ambiguous — 799 is
+both 7,99€ and $7.99. The file records the store it came from in `cc`.
 
 If the shortlist looks thin or wrong, change the mood tags and run it again before
 judging. Two runs is normal; inventing games to fill the gap is not.

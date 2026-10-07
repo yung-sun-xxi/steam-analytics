@@ -18,15 +18,21 @@ Steam catalogue, argued against your real playtime.
 ## Run
 
 ```
-python3 steam_fetch.py --steamid 76561198059286732     # collect
+python3 steam_fetch.py --steamid 76561198059286732 --cc am    # collect
 python3 build_profile.py                               # digest for the LLM stage
 ```
 
 Refresh runs (`--quick`) re-pull playtime, wishlist and recent activity, and reuse
 achievements for every game whose playtime has not moved.
 
-Useful flags: `--no-store` (skip store metadata, much faster), `--no-achievements`,
-`--min-playtime 30` (achievements only for games actually played), `--cc es` (price region),
+`--cc` is the Steam store country and is required, here and in `candidates.py`. There is
+no default on purpose: prices differ by region and a default would price the library in a
+region nobody chose. The country is stamped into the export, and candidate rows carry the
+store's own price string (`price_display`, e.g. `$14.49`) next to the bare number, because
+cents alone are ambiguous — 799 is 7,99€ in Spain and $7.99 in the US.
+
+Other useful flags: `--no-store` (skip store metadata, much faster), `--no-achievements`,
+`--min-playtime 30` (achievements only for games actually played),
 `--store-pause 1.5` (store API throttles at roughly 200 requests / 5 min).
 
 ## Tests
@@ -66,7 +72,7 @@ release-era distribution, recent activity windows, wishlist.
 ```
 python3 taste.py                                        # tag-space taste vector
 python3 tags.py --find horror --mine 30 --role search   # look up mood tags
-python3 candidates.py --tags horror --mood "хочу страшное" --company coop
+python3 candidates.py --tags horror --mood "хочу страшное" --cc am --company coop
 python3 journal.py show                                 # what was recommended, what he said
 python3 blacklist.py add-tag --name "Anime"             # never recommend this again
 python3 manual_games.py add --name "Mario Kart 8 Deluxe" --hours 200 --year 2018 \

@@ -43,6 +43,23 @@ class ParseSearchRow(unittest.TestCase):
         self.assertAlmostEqual(r["price_final"], 4.99)
         self.assertEqual(r["discount_pct"], 60)
 
+    def test_price_keeps_the_store_string(self):
+        """Cents alone cannot say which money they are: Dead by Daylight is 799 in both
+        the Spanish and the US store, 7,99EUR in one and $7.99 in the other."""
+        r = self.rows[0]
+        self.assertEqual(r["price_display"], "4,99\u20ac")
+        same_cents = ['<a class="search_result_row" data-ds-appid="381210">'
+                      '<div class="discount_final_price">%s</div></a>' % p
+                      for p in ("7,99\u20ac", "$7.99")]
+        parsed = [steamweb.parse_search_row(row) for row in same_cents]
+        self.assertEqual([p["price_display"] for p in parsed], ["7,99\u20ac", "$7.99"])
+
+    def test_a_row_without_a_price_says_nothing(self):
+        r = steamweb.parse_search_row('<a class="search_result_row" '
+                                      'data-ds-appid="42"></a>')
+        self.assertIsNone(r["price_display"])
+        self.assertIsNone(r["price_final"])
+
     def test_tagids_are_ints(self):
         r = self.rows[0]
         self.assertTrue(r["search_tagids"])
@@ -50,6 +67,34 @@ class ParseSearchRow(unittest.TestCase):
 
     def test_row_without_appid_is_dropped(self):
         self.assertIsNone(steamweb.parse_search_row('<a class="search_result_row"></a>'))
+
+
+class SearchPageCountry(unittest.TestCase):
+    """The country has to reach the URL, or Steam picks a store from the IP and the
+    answer quotes prices from a region nobody chose."""
+
+    def setUp(self):
+        self.seen = []
+        self.real = steamweb.http_json
+        steamweb.http_json = lambda url, **kw: self.seen.append(url) or {
+            "total_count": 0, "results_html": ""}
+
+    def tearDown(self):
+        steamweb.http_json = self.real
+
+    def test_cc_is_sent_when_given(self):
+        steamweb.search_page([1667], cc="am")
+        self.assertIn("cc=am", self.seen[0])
+
+    def test_no_cc_means_no_parameter_rather_than_a_guess(self):
+        steamweb.search_page([1667])
+        self.assertNotIn("cc=", self.seen[0])
+
+    def test_counting_calls_stay_country_free(self):
+        """Tag rarity is a catalogue count with no price in it."""
+        with tempfile.TemporaryDirectory() as d:
+            steamweb.tag_rarity([1667], outdir=d)
+        self.assertNotIn("cc=", self.seen[0])
 
 
 class TagDictionary(unittest.TestCase):

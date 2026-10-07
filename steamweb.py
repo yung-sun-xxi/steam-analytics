@@ -130,14 +130,19 @@ def game_tags(appid, outdir="data", alias=None):
 STORESEARCH_URL = "https://store.steampowered.com/api/storesearch/"
 
 
-def store_search(term, cc="es", limit=8):
+def store_search(term, cc=None, limit=8):
     """Resolve a game name to store entries. Returns [{appid, name, ...}, ...].
 
     Fuzzy on purpose - "Halo" comes back as The Master Chief Collection - so callers
     must show what matched rather than take the first hit.
+
+    `cc` only decides which regional edition surfaces here; no price is read off this
+    endpoint. Left out of the URL when absent rather than guessed.
     """
-    url = STORESEARCH_URL + "?" + urllib.parse.urlencode(
-        {"term": term, "cc": cc, "l": "english"})
+    params = {"term": term, "l": "english"}
+    if cc:
+        params["cc"] = cc
+    url = STORESEARCH_URL + "?" + urllib.parse.urlencode(params)
     data = http_json(url)
     items = (data or {}).get("items") or []
     return [{"appid": i.get("id"), "name": i.get("name"),
@@ -155,6 +160,10 @@ TITLE_RE = re.compile(r'<span class="title">(.*?)</span>', re.S)
 RELEASED_RE = re.compile(r'<div class="search_released[^"]*">(.*?)</div>', re.S)
 REVIEW_RE = re.compile(r'class="search_review_summary[^"]*"\s+data-tooltip-html="(.*?)"', re.S)
 PRICE_RE = re.compile(r'data-price-final="(\d+)"')
+# The store's own price string, currency and all. `data-price-final` is bare cents, and
+# cents are ambiguous across regions: Dead by Daylight is 799 in both Spain and the US,
+# meaning 7,99EUR in one and $7.99 in the other. Only the rendered string says which.
+PRICE_DISPLAY_RE = re.compile(r'<div class="discount_final_price[^"]*">(.*?)</div>', re.S)
 DISCOUNT_RE = re.compile(r'<div class="discount_pct">-(\d+)%</div>')
 
 REVIEW_TOOLTIP_RE = re.compile(r"^(.*?)&lt;br&gt;(\d+)% of the ([\d,]+) user reviews", re.S)
@@ -173,6 +182,7 @@ def parse_search_row(row):
     released = RELEASED_RE.search(row)
     tagids = TAGIDS_RE.search(row)
     price = PRICE_RE.search(row)
+    price_display = PRICE_DISPLAY_RE.search(row)
     discount = DISCOUNT_RE.search(row)
     review_pct = review_count = None
     review_summary = None
@@ -195,17 +205,25 @@ def parse_search_row(row):
         "review_pct": review_pct,
         "review_count": review_count,
         "price_final": round(int(price.group(1)) / 100.0, 2) if price else None,
+        "price_display": _unescape(price_display.group(1)) if price_display else None,
         "discount_pct": int(discount.group(1)) if discount else 0,
         "store_url": f"https://store.steampowered.com/app/{int(appid.group(1))}/",
     }
 
 
-def search_page(tagids=(), start=0, count=50, sort="Reviews_DESC", extra=None):
-    """One page of catalogue search. Returns (total_count, [row, ...])."""
+def search_page(tagids=(), start=0, count=50, sort="Reviews_DESC", extra=None, cc=None):
+    """One page of catalogue search. Returns (total_count, [row, ...]).
+
+    Pass `cc` whenever the prices in the rows will be read. Without it Steam picks a
+    store from the caller's IP, which is how one answer ends up quoting two regions.
+    Pure counting calls (tag rarity, co-op share) can leave it out.
+    """
     params = {
         "query": "", "start": start, "count": count,
         "sort_by": sort, "infinite": 1, "json": 1,
     }
+    if cc:
+        params["cc"] = cc
     if tagids:
         params["tags"] = ",".join(str(t) for t in tagids)
     if extra:

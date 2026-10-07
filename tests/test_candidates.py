@@ -6,7 +6,9 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import blacklist
 import candidates
+import steamweb
 
 MOOD = [1721]          # Psychological Horror
 TASTE = {1662: 0.04,   # Survival, rare -> a search tag
@@ -123,6 +125,45 @@ class Score(unittest.TestCase):
 
     def test_no_tag_overlap_scores_no_taste(self):
         self.assertEqual(score(row(tagids=(999999,)))["taste_fit"], 0.0)
+
+
+class StoreCountry(unittest.TestCase):
+    """Prices only mean something next to the store they came from."""
+
+    def setUp(self):
+        self.calls = []
+        self.real_search = steamweb.search_page
+
+        def fake(tagids=(), start=0, count=50, sort="Reviews_DESC", extra=None, cc=None):
+            self.calls.append(cc)
+            return 0, []
+
+        steamweb.search_page = fake
+
+    def tearDown(self):
+        steamweb.search_page = self.real_search
+
+    def test_every_catalogue_query_carries_the_country(self):
+        candidates.collect(MOOD, TASTE, ROLES, {}, "am", verbose=False)
+        self.assertTrue(self.calls)
+        self.assertEqual(set(self.calls), {"am"})
+
+    def test_the_country_is_written_into_the_result(self):
+        """Without it a saved shortlist cannot be told apart from one built elsewhere."""
+        taste = {"tags": [], "owned_appids": [], "not_tried": [],
+                 "manual_appids": [], "wishlist_appids": []}
+        real = (steamweb.tag_dictionary, blacklist.sets,
+                candidates.coop_share, candidates.collect)
+        steamweb.tag_dictionary = lambda *a, **kw: ({}, {})
+        blacklist.sets = lambda *a, **kw: (set(), set())
+        candidates.coop_share = lambda *a, **kw: (0, 0, 0.0)
+        candidates.collect = lambda *a, **kw: ({}, [], [])
+        try:
+            res = candidates.build(taste, MOOD, "хочу страшное", "am", verbose=False)
+        finally:
+            (steamweb.tag_dictionary, blacklist.sets,
+             candidates.coop_share, candidates.collect) = real
+        self.assertEqual(res["cc"], "am")
 
 
 if __name__ == "__main__":

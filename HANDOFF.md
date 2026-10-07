@@ -44,9 +44,10 @@ What he expects, learned the hard way in this project:
 |---|---|
 | Repo | https://github.com/yung-sun-xxi/steam-analytics (private) |
 | Branch | `master`, CI green |
-| Tests | 85, all offline, `python3 -m unittest discover -s tests -t .` |
+| Tests | 93, all offline, `python3 -m unittest discover -s tests -t .` |
 | CI | `.github/workflows/ci.yml` — compileall, then the suite, on every PR |
 | His data | 93 owned games, 70 played, ~2669 h, 1 game recorded outside Steam |
+| Store | Armenia, `--cc am`, stored in memory 2026-08-25 — required by both fetching scripts |
 
 Everything under `data/` is gitignored: the library export, the caches, the blacklist, the
 manual games and the answer journal. It is personal and it never leaves his machine.
@@ -55,12 +56,12 @@ manual games and the answer journal. It is personal and it never leaves his mach
 
 | Path | What it does |
 |---|---|
-| `steam_fetch.py` | Library export. Web API + store appdetails. `--quick` reuses achievements for games whose playtime has not moved. |
+| `steam_fetch.py` | Library export. Web API + store appdetails. `--cc` required. `--quick` reuses achievements for games whose playtime has not moved. |
 | `build_profile.py` | Offline digest of the export → `profile.json` / `profile.md`. |
 | `steamweb.py` | Store-front layer: tag dictionary, per-game tags, catalogue search, tag rarity, name lookup. Everything cached, 1.5 s between calls. |
 | `taste.py` | The taste vector, plus `merge_manual()` folding in games played elsewhere → `data/taste.json`. |
 | `tags.py` | Tag lookup by name, with catalogue rarity and his own weight. |
-| `candidates.py` | ~40 scored candidates for one mood → `data/candidates_<mood>.json`. |
+| `candidates.py` | ~40 scored candidates for one mood → `data/candidates_<mood>.json`. `--cc` required. |
 | `manual_games.py` | Games played outside Steam → `data/manual_games.json`. |
 | `blacklist.py` | Games and tags never to recommend → `data/blacklist.json`. |
 | `journal.py` | Append-only log of answers and free-text feedback → `data/journal.jsonl`. |
@@ -75,7 +76,7 @@ manual_games.py add           ->  data/manual_games.json
         both are read by
 taste.py                      ->  data/taste.json      (vector, roles, exclusions)
         read by
-candidates.py --tags ... --company ...  ->  data/candidates_<mood>.json
+candidates.py --tags ... --cc ... --company ...  ->  data/candidates_<mood>.json
         judged by the skill, then
 journal.py answer / feedback  ->  data/journal.jsonl
 ```
@@ -120,7 +121,14 @@ them; if one looks wrong, say why with numbers and let him decide.
     concrete: his game, his hours, when he played it.
 11. **Repeats are fine.** A mood mismatch does not blacklist anything. The blacklist is a
     separate, explicit statement and nothing lands there on its own judgement.
-12. **A manual record must never be richer than a Steam one.** Steam gives two numbers for
+12. **No run guesses the store country.** `--cc` is required by `steam_fetch.py` and
+    `candidates.py`; there is no default, because a default silently prices an answer in
+    a region he never chose. His country is Armenia (`am`), stored in memory at his
+    request, so the skill does not ask. Answers quote `price_display` — the store's own
+    string — never `price_final`, which is bare cents: 799 is 7,99€ in Spain and $7.99 in
+    the US, so the number alone cannot say which money it is. Measured 2026-08-25 on the
+    same query: Dead by Daylight $5.99 / 7,99€, Outer Wilds $8.09 / 13,79€.
+13. **A manual record must never be richer than a Steam one.** Steam gives two numbers for
     his 93 games — hours and last-played. A manual entry with more fields would make the
     two incomparable. Bursty play patterns go in `--note`, which does not touch the weight.
 
@@ -156,6 +164,11 @@ Fuzzy: "Halo" returns The Master Chief Collection first. Never take the first hi
 
 **Concurrent players:** `https://api.steampowered.com/ISteamUserStats/GetNumberOfCurrentPlayers/v1/?appid=<id>`,
 no key needed. Verified working — this is backlog item 1.
+
+**Country.** The catalogue search endpoint takes `&cc=<code>` and honours it; name lookup
+(`storesearch`) takes one too, but only to pick a regional edition — no price is read
+there, so it is left out unless given. Tag rarity and co-op share are pure counts and stay
+country-free.
 
 **Rate limits.** Store endpoints throttle at roughly 200 requests / 5 min; keep ~1.5 s
 between calls and cache to disk. The Web API with a key is generous, 0.15 s is fine.
@@ -194,20 +207,17 @@ or raise them with him.
 
 ## What is left
 
-`BACKLOG.md` holds six items in priority order. The order is one opinion and it moves, so
+`BACKLOG.md` holds five items in priority order. The order is one opinion and it moves, so
 refer to items by name rather than by number. In short:
 
 1. **Player-count stats** — drop dead multiplayer, and use players-per-1000-reviews as the
    staying-power signal for long-haul moods. Cheap, self-contained, prevents a whole class
    of bad recommendations. Item 1 in the file has the measured numbers and the caveats.
-2. **Steam country and prices** — a real bug today: `steam_fetch.py` defaults to `--cc es`
-   while `candidates.py` sends no country at all, so one answer mixes two regions. Ask
-   every time unless he asks to have it remembered, and then never ask again.
-3. **Prompts for "не знаю, чего хочу"**.
-4. **Auto-matching recommendations against the library** — needs journal entries, of which
+2. **Prompts for "не знаю, чего хочу"**.
+3. **Auto-matching recommendations against the library** — needs journal entries, of which
    there are none yet.
-5. **Typed feedback** — blocked until there is enough free text to derive fields from.
-6. **Revisit `sqrt(hours)`** — nothing to test against until 4 and 5 exist.
+4. **Typed feedback** — blocked until there is enough free text to derive fields from.
+5. **Revisit `sqrt(hours)`** — nothing to test against until 3 and 4 exist.
 
 Read the item in `BACKLOG.md` before starting: several carry design decisions and measured
 numbers that took a live round to establish.
@@ -218,10 +228,10 @@ numbers that took a live round to establish.
 
 ```bash
 cd "/Users/a.stepanenkov/PersonalProjects/Steam analytics"
-python3 -m unittest discover -s tests -t .      # 85 tests, offline, ~0.03 s
-python3 steam_fetch.py --steamid 76561198059286732 --quick
+python3 -m unittest discover -s tests -t .      # 93 tests, offline, ~0.03 s
+python3 steam_fetch.py --steamid 76561198059286732 --cc am --quick
 python3 taste.py
-python3 candidates.py --tags horror --mood "хочу страшное" --company coop --limit 20
+python3 candidates.py --tags horror --mood "хочу страшное" --cc am --company coop --limit 20
 ```
 
 His SteamID64 is `76561198059286732`, profile public. The API key is in the macOS Keychain:

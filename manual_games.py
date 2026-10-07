@@ -218,7 +218,8 @@ def cmd_show(args):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--outdir", default="data")
-    ap.add_argument("--cc", default="es")
+    ap.add_argument("--cc", default=None,
+                    help="store country for the name lookup only; no price is read")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     r = sub.add_parser("resolve", help="look a name up in the store, choose by hand")
