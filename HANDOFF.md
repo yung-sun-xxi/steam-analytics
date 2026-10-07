@@ -43,7 +43,7 @@ What he expects, learned the hard way in this project:
 | | |
 |---|---|
 | Repo | https://github.com/yung-sun-xxi/steam-analytics (private) |
-| Branch | `main`, CI green |
+| Branch | `master`, CI green |
 | Tests | 85, all offline, `python3 -m unittest discover -s tests -t .` |
 | CI | `.github/workflows/ci.yml` — compileall, then the suite, on every PR |
 | His data | 93 owned games, 70 played, ~2669 h, 1 game recorded outside Steam |
@@ -187,7 +187,7 @@ or raise them with him.
    returned first. `SKILL.md` says not to use it. Consider removing it outright.
 5. **`journal.jsonl` has no rotation or read-side tooling** beyond `show`. Fine for now,
    but backlog items 4 and 5 both depend on reading it back.
-6. **`main` has no branch protection.** Merges could bypass CI. He was offered this and has
+6. **`master` has no branch protection.** Merges could bypass CI. He was offered this and has
    not asked for it.
 
 ---
