@@ -164,7 +164,11 @@ PRICE_RE = re.compile(r'data-price-final="(\d+)"')
 # cents are ambiguous across regions: Dead by Daylight is 799 in both Spain and the US,
 # meaning 7,99EUR in one and $7.99 in the other. Only the rendered string says which.
 PRICE_DISPLAY_RE = re.compile(r'<div class="discount_final_price[^"]*">(.*?)</div>', re.S)
-DISCOUNT_RE = re.compile(r'<div class="discount_pct">-(\d+)%</div>')
+# The discount block carries the percentage as an attribute; the visible "-20%" div is
+# the fallback. In November 2026 the store added aria-hidden and a tooltip to that div,
+# and a regex anchored on the bare `<div class="discount_pct">` read every sale as 0%.
+DISCOUNT_ATTR_RE = re.compile(r'<div class="discount_block[^"]*"[^>]*\sdata-discount="(\d+)"')
+DISCOUNT_RE = re.compile(r'<div class="discount_pct"[^>]*>\s*-(\d+)%\s*</div>')
 
 REVIEW_TOOLTIP_RE = re.compile(r"^(.*?)&lt;br&gt;(\d+)% of the ([\d,]+) user reviews", re.S)
 
@@ -183,7 +187,7 @@ def parse_search_row(row):
     tagids = TAGIDS_RE.search(row)
     price = PRICE_RE.search(row)
     price_display = PRICE_DISPLAY_RE.search(row)
-    discount = DISCOUNT_RE.search(row)
+    discount = DISCOUNT_ATTR_RE.search(row) or DISCOUNT_RE.search(row)
     review_pct = review_count = None
     review_summary = None
     rv = REVIEW_RE.search(row)
