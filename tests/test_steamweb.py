@@ -54,6 +54,28 @@ class ParseSearchRow(unittest.TestCase):
         parsed = [steamweb.parse_search_row(row) for row in same_cents]
         self.assertEqual([p["price_display"] for p in parsed], ["7,99\u20ac", "$7.99"])
 
+    def test_discount_survives_extra_attributes(self):
+        """Store markup as of November 2026: the -20% div gained aria-hidden and a
+        tooltip, and the old regex read every sale as 0%."""
+        row = ('<a class="search_result_row" data-ds-appid="1904480">'
+               '<div class="discount_block search_discount_block" data-price-final="559" '
+               'data-bundlediscount="0" data-discount="20"><div class="discount_pct" '
+               'aria-hidden="true" data-tooltip-text="Limited-time discount off the '
+               'regular price">-20%</div><div class="discount_prices" aria-hidden="true">'
+               '<div class="discount_original_price">$6.99</div>'
+               '<div class="discount_final_price">$5.59</div></div></div></a>')
+        r = steamweb.parse_search_row(row)
+        self.assertEqual(r["discount_pct"], 20)
+        self.assertEqual(r["price_display"], "$5.59")
+
+    def test_discount_falls_back_to_the_visible_percentage(self):
+        row = ('<a class="search_result_row" data-ds-appid="42">'
+               '<div class="discount_pct" aria-hidden="true">-35%</div></a>')
+        self.assertEqual(steamweb.parse_search_row(row)["discount_pct"], 35)
+
+    def test_no_discount_reads_zero(self):
+        self.assertEqual(self.rows[1]["discount_pct"], 0)
+
     def test_a_row_without_a_price_says_nothing(self):
         r = steamweb.parse_search_row('<a class="search_result_row" '
                                       'data-ds-appid="42"></a>')
